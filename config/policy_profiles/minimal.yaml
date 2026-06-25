@@ -1,0 +1,14 @@
+description: 僅讀寫 Case，不碰叢集與執行指令
+mode_default: allowlist
+
+capabilities:
+  case_read: true
+  case_write: true
+  case_create: false
+  cluster_read: false
+  cluster_exec: false
+  host_diag: false
+  must_gather: false
+  upload_attachments: false
+
+upload_path_prefixes: []

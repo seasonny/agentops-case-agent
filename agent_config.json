@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "kubernetes": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "rh-tam-kubernetes-mcp-server@latest"
+      ]
+    }
+  },
+  "selectedAuthType": "oauth-personal",
+  "security": {
+    "auth": {
+      "selectedType": "oauth-personal"
+    }
+  }
+}

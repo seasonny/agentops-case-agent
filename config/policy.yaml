@@ -1,0 +1,31 @@
+# Agent 安全政策 — 唯一需要編輯的入口
+#
+# 快速開始：
+#   1. 選一個 profile（minimal | diagnostic | enterprise）
+#   2. python main.py --check   查看生效摘要
+#
+# 詳細說明：docs/POLICY.md
+
+profile: diagnostic
+
+# skip_and_continue = 跳過危險指令列，執行其餘（預設）
+# reject_all      = 留言含危險指令則整則拒絕
+dangerous_handling: skip_and_continue
+
+# denylist = 預設允許診斷能力，只擋危險項（PoC 友善）
+# allowlist = 只允許 profile 內開啟的能力（Enterprise 建議）
+# 留空則沿用 profile 的 mode_default
+mode:
+
+# 可選：覆寫 profile 內某項能力（true / false）
+# capabilities:
+#   cluster_exec: false
+#   host_diag: true
+
+# 可選：進階微調（多數情境不需要）
+# overrides:
+#   allow_tools: []
+#   block_tools: []
+#   exec_binaries: []
+#   dangerous_commands: []
+#   upload_path_prefixes: ["/tmp/", "./must-gather/"]

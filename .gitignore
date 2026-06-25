@@ -1,0 +1,16 @@
+note.md
+agent_memory.json
+.env
+.env.*
+!.env.example
+config/local.json
+.cursor/
+__pycache__/
+*.pyc
+.Python
+.venv/
+venv/
+.DS_Store
+*.log
+diag-output/
+reports/

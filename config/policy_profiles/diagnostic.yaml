@@ -1,0 +1,15 @@
+description: 一般 Support 診斷（預設，與現有 PoC 行為相容）
+mode_default: denylist
+dangerous_handling: skip_and_continue
+
+capabilities:
+  case_read: true
+  case_write: true
+  case_create: true
+  cluster_read: true
+  cluster_exec: true
+  host_diag: true
+  must_gather: true
+  upload_attachments: true
+
+upload_path_prefixes: []

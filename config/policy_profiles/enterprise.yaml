@@ -1,0 +1,14 @@
+description: 生產環境 — 僅允許 profile 內明確開啟的能力
+mode_default: allowlist
+
+capabilities:
+  case_read: true
+  case_write: true
+  case_create: false
+  cluster_read: true
+  cluster_exec: false
+  host_diag: false
+  must_gather: false
+  upload_attachments: false
+
+upload_path_prefixes: []

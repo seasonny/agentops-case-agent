@@ -1,0 +1,82 @@
+# 能力 → MCP 工具對照表（產品內建，一般不需修改）
+# 新增 MCP 工具時更新此檔即可，不必改 Python 程式碼。
+
+capabilities:
+  case_read:
+    label: 讀取 Case / 留言 / 附件清單
+    tools:
+      - read_case_comments_rh_portal
+      - read_case_rh_portal
+      - get_case_rh_portal
+      - list_case_attachments_rh_portal
+      - get_case_comment_rh_portal
+
+  case_write:
+    label: 發送 Case 回覆
+    tools:
+      - add_case_comment_rh_portal
+
+  case_create:
+    label: 建立新 Case
+    tools:
+      - create_case_rh_portal
+      - filter_cases_rh_portal
+
+  cluster_read:
+    label: 叢集唯讀查詢（oc get / logs 等）
+    tools:
+      - resources_list
+      - resources_get
+      - pods_list
+      - pods_log
+      - pods_get
+      - pods_status
+      - namespaces_list
+      - events_list
+      - projects_list
+      - routes_list
+      - services_list
+      - deployments_list
+      - nodes_list
+      - configmaps_list
+      - helm_list
+
+  cluster_exec:
+    label: 叢集內執行診斷指令（pods_exec）
+    tools:
+      - pods_exec
+
+  host_diag:
+    label: 本機 / 跳板機網路診斷（exec_argv）
+    tools:
+      - exec_argv
+
+  must_gather:
+    label: 收集 must-gather
+    tools:
+      - oc_adm_must_gather
+
+  upload_attachments:
+    label: 上傳附件到 Case
+    tools:
+      - upload_attachment_rh_portal
+
+# 任何 profile 都永遠禁止的變更類工具
+always_blocked_tools:
+  - pods_delete
+  - resources_delete
+  - helm_uninstall
+  - helm_install
+  - pods_run
+  - resources_create_or_update
+  - create_case_rh_portal
+  - update_case_rh_portal
+
+# 網路診斷 shell 允許的 argv[0]（pods_exec 與 exec_argv 共用）
+default_exec_binaries:
+  - nslookup
+  - ping
+  - dig
+  - host
+  - traceroute
+  - curl

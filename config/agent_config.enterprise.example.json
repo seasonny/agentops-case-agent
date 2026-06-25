@@ -1,0 +1,47 @@
+{
+  "case_id": "01234567",
+  "llm": {
+    "provider": "gemini",
+    "model": "gemini-3.1-flash-lite",
+    "api_key_env": "GEMINI_API_KEY"
+  },
+  "tenant": {
+    "id": "prod-ocp-team-a",
+    "label": "OCP Production Team A",
+    "policy_profile": "enterprise"
+  },
+  "enterprise": {
+    "audit_trail": true
+  },
+  "outage": {
+    "enabled": false,
+    "interval_seconds": 5,
+    "notify_webhook_url_env": "CASE_AGENT_WEBHOOK_URL",
+    "notify_on": ["reply_posted", "policy_blocked", "approval_required", "clarify"]
+  },
+  "approval": {
+    "enabled": true,
+    "required_tools": [
+      "oc_adm_must_gather",
+      "pods_exec",
+      "upload_attachment_rh_portal"
+    ]
+  },
+  "case_context": {
+    "track_diagnostics": true,
+    "max_items": 50
+  },
+  "secrets": {
+    "env_from_files": {
+      "GEMINI_API_KEY": "/run/secrets/gemini-api-key"
+    }
+  },
+  "polling": {
+    "interval_seconds": 15,
+    "cooldown_after_reply_seconds": 60
+  },
+  "investigation": {
+    "enabled": true,
+    "max_follow_up_steps": 1
+  }
+}

@@ -1,0 +1,34 @@
+# Clarify 問題模板（向 Support 請教時使用，非關鍵字路由）
+# 依情境選用；LLM 產生的問題會與模板合併去重。
+
+scenarios:
+  must_gather_no_mcp:
+    questions:
+      - "請提供 must-gather 要在哪個叢集／環境執行？"
+      - "請提供完整指令（含 namespace／kubeconfig 若需要）與產物路徑。"
+      - "完成後是否要以 Case 附件上傳？若是，請說明預期檔名。"
+
+  sosreport_no_mcp:
+    questions:
+      - "請提供 sosreport 要在哪台主機執行？"
+      - "請提供完整指令與產物路徑／檔名。"
+      - "是否需上傳至本 Case 附件？"
+
+  upload_no_path:
+    questions:
+      - "請提供要上傳的檔案完整路徑與檔名。"
+      - "若檔案在遠端主機，請說明如何取得或是否需先執行收集指令。"
+
+  pod_exec_missing_target:
+    questions:
+      - "若需從叢集內執行診斷，請提供 namespace 與 pod 名稱。"
+      - "或請說明是否可改用其他非侵入式查詢方式。"
+
+  host_exec_unavailable:
+    questions:
+      - "若需在本機或跳板機執行，請提供主機與完整指令。"
+      - "請說明產物路徑，以及是否需上傳至 Case 附件。"
+
+  generic_unmapped:
+    questions:
+      - "請提供要在哪台機器／叢集執行、完整指令、產物路徑，以及是否上傳附件。"

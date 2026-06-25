@@ -1,0 +1,19 @@
+{
+  "mcp_providers": {
+    "platform": {
+      "command": "/path/to/rh-tam-kubernetes-mcp-server",
+      "args": [],
+      "env": {}
+    },
+    "exec": {
+      "command": "/usr/local/bin/mcp-shell-server",
+      "args": [],
+      "env": {
+        "ALLOW_COMMANDS": "dig,ping,nslookup,host,traceroute,curl"
+      },
+      "tool_map": {
+        "exec_argv": "shell_execute"
+      }
+    }
+  }
+}

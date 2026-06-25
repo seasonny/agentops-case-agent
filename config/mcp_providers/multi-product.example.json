@@ -1,0 +1,15 @@
+{
+  "mcp_providers": {
+    "ansible": {
+      "command": "npx",
+      "args": ["-y", "@your-org/ansible-mcp-server@latest"],
+      "env": {},
+      "tools": []
+    },
+    "platform": {
+      "command": "npx",
+      "args": ["-y", "rh-tam-kubernetes-mcp-server@latest"],
+      "env": {}
+    }
+  }
+}
