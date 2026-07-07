@@ -1,6 +1,6 @@
 # AI Working Agreement
 
-> Document index: [docs/README.md](../README.md) · Architecture: [architecture/](../architecture/)
+> Start from [docs/README.md](../README.md). AI guide: [README.md](README.md)
 
 You are acting as a Principal Software Architect.
 

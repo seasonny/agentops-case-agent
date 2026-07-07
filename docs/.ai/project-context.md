@@ -1,6 +1,6 @@
 # Project Context
 
-> Document index: [docs/README.md](../README.md) · Start here for new contributors.
+> Start from [docs/README.md](../README.md). AI guide: [README.md](README.md)
 
 You are contributing to an Enterprise AI Agent Reference project.
 

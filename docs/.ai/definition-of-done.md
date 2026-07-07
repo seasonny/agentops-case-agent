@@ -1,5 +1,7 @@
 # Definition of Done
 
+> Start from [docs/README.md](../README.md). AI guide: [README.md](README.md) · [engineering-method.md](engineering-method.md)
+
 This document defines the quality standard for every architectural change, refactoring, and feature implementation in this repository.
 
 A task is **not complete** simply because the code works.
