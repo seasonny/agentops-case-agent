@@ -122,7 +122,7 @@ python main.py --pending-approvals   # 待核准 MCP 操作
 python main.py --approve <case> <fingerprint> --approved-by sre@corp.com
 ```
 
-設定範例：`config/agent_config.enterprise.example.json` · 完整指南：[docs/ENTERPRISE.md](docs/ENTERPRISE.md)
+設定範例：`config/agent_config.enterprise.example.json` · 完整指南：[docs/operations/enterprise.md](docs/operations/enterprise.md)
 
 ---
 
@@ -393,7 +393,7 @@ AGENT_DEV_MODE=1
 
 ### 5. `config/policy.yaml` — 安全政策
 
-路徑：**`config/policy.yaml`**（詳見 [docs/POLICY.md](docs/POLICY.md)）
+路徑：**`config/policy.yaml`**（詳見 [docs/operations/policy.md](docs/operations/policy.md)）
 
 大多數情況只改一行：
 
@@ -436,7 +436,7 @@ python main.py --reset-memory          # 清除 agent_memory.json
 | Workflow 流程 | `workflow/graph.py` |
 | 預設值原始碼 | `core/config.py` 的 `default_config()` |
 
-詳見 [docs/DEVELOPER.md](docs/DEVELOPER.md)。
+詳見 [docs/guides/developer.md](docs/guides/developer.md)。
 
 ---
 
@@ -477,12 +477,15 @@ python main.py --reset-memory          # 清除 agent_memory.json
 
 ## 進階文件
 
+文件完整索引見 **[docs/README.md](docs/README.md)**。
+
 | 文件 | 內容 |
 |------|------|
-| [docs/POLICY.md](docs/POLICY.md) | 安全政策（profile / 能力包） |
-| [docs/DEVELOPER.md](docs/DEVELOPER.md) | 架構、Guardrail、觸發規則、擴充指南 |
-| [docs/mcp_case_api_integration.md](docs/mcp_case_api_integration.md) | MCP Case API 串接規格 |
-| [docs/mcp_exec_contract.md](docs/mcp_exec_contract.md) | 本機 exec MCP（dig/ping）契約 |
+| [docs/operations/policy.md](docs/operations/policy.md) | 安全政策（profile / 能力包） |
+| [docs/guides/developer.md](docs/guides/developer.md) | Guardrail、觸發規則、擴充、除錯 |
+| [docs/contracts/case-api.md](docs/contracts/case-api.md) | MCP Case API 串接規格 |
+| [docs/contracts/exec-mcp.md](docs/contracts/exec-mcp.md) | 本機 exec MCP（dig/ping）契約 |
+| [docs/architecture/](docs/architecture/) | 架構參考（貢獻者） |
 
 ---
 
