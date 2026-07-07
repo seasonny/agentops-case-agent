@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Set
 
-from bridges.case_portal import CasePortalBridge
+from connectors import CasePortalConnector, Connector
 from core.agent_settings import get_loop_guard_seconds
 from core.audit_trail import AuditTrail
 from core.case_context import build_case_history
@@ -114,7 +114,7 @@ def skip_and_mark(
 def process_poll_cycle(
     memory: Dict[str, Any],
     config: Dict[str, Any],
-    portal: CasePortalBridge,
+    connector: Connector,
     app,
     understanding: UnderstandingService,
     resolver: ParticipantResolver,
@@ -150,7 +150,7 @@ def process_poll_cycle(
         time.sleep(interval)
         return
 
-    comments = portal.query_case_comments(memory["case_id"])
+    comments = connector.poll_events(memory["case_id"])
     if comments is None:
         log_warning("comments_unavailable")
         time.sleep(interval)

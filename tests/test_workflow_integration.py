@@ -28,7 +28,7 @@ def _policy_result(
 
 def _base_deps(**overrides):
     deps = WorkflowDeps(
-        portal=mock.MagicMock(),
+        connector=mock.MagicMock(),
         executor=mock.MagicMock(),
         policy=mock.MagicMock(),
         decision_engine=mock.MagicMock(),

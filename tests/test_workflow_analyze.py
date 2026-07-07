@@ -20,7 +20,7 @@ class WorkflowAnalyzeSkipTests(unittest.TestCase):
         )
 
         deps = WorkflowDeps(
-            portal=mock.MagicMock(),
+            connector=mock.MagicMock(),
             executor=mock.MagicMock(),
             policy=mock.MagicMock(),
             decision_engine=mock.MagicMock(),

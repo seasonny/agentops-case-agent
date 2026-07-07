@@ -7,6 +7,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from bridges.case_portal import CasePortalBridge
+from connectors import CasePortalConnector
 from bridges.mcp_registry import MCPRegistry
 from core.agent_settings import init_agent_settings
 from core.approval import approve_fingerprint, format_pending_approvals_text
@@ -165,7 +166,8 @@ def main() -> None:
         memory["case_id"] = case_id
 
     mcp_registry = MCPRegistry.from_config(config)
-    portal = CasePortalBridge(mcp_registry.platform_bridge())
+    bridge = CasePortalBridge(mcp_registry.platform_bridge())
+    connector = CasePortalConnector(bridge)
     mcp_tool_names = mcp_registry.list_tools()
 
     execution_cfg = config.get("execution", {})
@@ -186,7 +188,7 @@ def main() -> None:
     collaboration = CollaborationReasoner(config)
 
     deps = WorkflowDeps(
-        portal=portal,
+        connector=connector,
         executor=executor,
         policy=policy,
         decision_engine=decision_engine,
@@ -217,7 +219,7 @@ def main() -> None:
             process_poll_cycle(
                 memory,
                 config,
-                portal,
+                connector,
                 app,
                 understanding,
                 resolver,

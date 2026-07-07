@@ -70,9 +70,10 @@ def run_setup_check(config: Dict[str, Any], *, case_id: str = "") -> int:
         try:
             portal_bridge = registry.platform_bridge()
             from bridges.case_portal import CasePortalBridge
+            from connectors import CasePortalConnector
 
-            portal = CasePortalBridge(portal_bridge)
-            comments = portal.query_case_comments(case_id)
+            connector = CasePortalConnector(CasePortalBridge(portal_bridge))
+            comments = connector.poll_events(case_id)
             if comments is None:
                 case_msg = f"cannot read comments for case {case_id}"
             else:

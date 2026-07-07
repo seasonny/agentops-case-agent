@@ -9,7 +9,7 @@ from workflow.graph import AgentState, WorkflowDeps, build_workflow
 class WorkflowApprovalTests(unittest.TestCase):
     def test_execute_blocks_until_approved(self):
         deps = WorkflowDeps(
-            portal=mock.MagicMock(),
+            connector=mock.MagicMock(),
             executor=mock.MagicMock(),
             policy=mock.MagicMock(),
             decision_engine=mock.MagicMock(),

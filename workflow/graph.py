@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from bridges.case_portal import CasePortalBridge
+from connectors import Connector
 from core.case_convergence import CaseConvergenceAssessor
 from core.collaboration_reasoner import CollaborationReasoner
 from core.understanding import UnderstandingService
@@ -105,7 +105,7 @@ class AgentState(TypedDict, total=False):
 
 @dataclass
 class WorkflowDeps:
-    portal: CasePortalBridge
+    connector: Connector
     executor: MCPExecutor
     policy: MCPPolicyChecker
     decision_engine: DecisionEngine
@@ -363,7 +363,7 @@ def build_workflow(deps: WorkflowDeps):
             }
 
         outcome = process_post_execute_collection(
-            portal=deps.portal,
+            connector=deps.connector,
             executor=deps.executor,
             policy=deps.policy,
             case_id=case_id,
@@ -713,7 +713,7 @@ def build_workflow(deps: WorkflowDeps):
                 comment_id=state.get("comment_id"),
             )
 
-        post_result = deps.portal.add_comment(case_id, safe_text)
+        post_result = deps.connector.send_response(case_id, safe_text)
         return {
             "reply_posted": post_result.get("success", False),
             "status": state.get("status", "POLLING"),

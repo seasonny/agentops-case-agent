@@ -19,7 +19,7 @@
 
 ```
 main.py 啟動 poll loop、組裝 runtime
-  → workflow/runner.py 單次 poll 編排
+  → workflow/runner.py 單次 poll 編排（經 Connector 取事件）
        → 讀取 Case 留言、角色辨識（participants）與觸發（trigger）
        → Understanding 理解留言（core/understanding/）
        → workflow/graph.py 協調執行
@@ -48,7 +48,7 @@ main.py 啟動 poll loop、組裝 runtime
 | **Decision Engine** | `core/decision/`、`mcp_policy`、`approval` | **已對齊（Sprint 3）** — `DecisionEngine` 單一入口；workflow `policy` / 核准閘門經此元件 |
 | **Tool Provider** | `bridges/mcp_*`、`core/mcp_action`、routing helpers | 較好 — MCP 抽象已成形 |
 | **Response** | `reply_composer`、`reply_guardrail`、`reply_grounding`、`case_portal` | 分散 — 無單一模組邊界 |
-| **Connector（事件來源）** | `case_portal`、`comments`、`workflow/runner.py` poll | Case 專用 — 尚未泛化 |
+| **Connector（事件來源）** | `connectors/`、`bridges/case_portal.py` | **已對齊（Sprint 4）** — `Connector` 介面 + `CasePortalConnector` 實作 |
 
 ---
 
@@ -84,9 +84,25 @@ main.py 啟動 poll loop、組裝 runtime
 |---|---|
 | **Purpose** | Workflow Engine runtime — 單次 poll 週期編排 |
 | **Responsibility** | cooldown / session 限制檢查；讀取並 enrich 留言；觸發與 triage；組裝 workflow state 並 `app.invoke`；run report、webhook、memory 持久化；poll 間隔 sleep |
-| **Main dependencies** | `workflow/graph`、`bridges/case_portal`、`core/`（comments、trigger、memory、audit 等） |
+| **Main dependencies** | `connectors/`、`workflow/graph`、`core/`（comments、trigger、memory、audit 等） |
 | **Key files** | `runner.py` |
-| **Future evolution** | Sprint 4 可能改為透過 Connector 介面取事件 |
+| **Future evolution** | 領域步驟可能移出，使 graph 專注編排（Sprint 5） |
+
+---
+
+### `connectors/`
+
+| | |
+|---|---|
+| **Purpose** | Connector 抽象 — 營運系統對話邊界（事件進、回覆出） |
+| **Responsibility** | 定義 `Connector` 協定；提供產品專屬實作（目前為 Red Hat Case Portal） |
+| **Main dependencies** | `bridges/case_portal`（MCP 實作細節） |
+| **Key files** | `base.py`（`Connector` Protocol）、`case_portal.py`（`CasePortalConnector`） |
+| **Future evolution** | 未來可新增 Jira / ServiceNow 實作，不修改 Workflow Engine |
+
+**Runtime 呼叫：** `workflow/runner.py` → `connector.poll_events()`；`workflow/graph.py` `post` → `connector.send_response()`。
+
+> **與 Tool Provider 的邊界：** Connector 負責「與營運系統對話」（讀留言、發回覆）；MCP Registry 負責「執行操作」（oc、shell、must-gather）。Case Portal MCP 是 Connector 實作的內部細節。
 
 ---
 
@@ -122,8 +138,8 @@ main.py 啟動 poll loop、組裝 runtime
 
 | | |
 |---|---|
-| **Purpose** | Red Hat Case Portal Connector |
-| **Responsibility** | 讀取 Case 留言與詳情；發送回覆留言；透過 MCP 與 Portal API 互動 |
+| **Purpose** | Red Hat Case Portal MCP 適配器 |
+| **Responsibility** | 經 MCP 讀寫 Case 留言、詳情、附件；由 `CasePortalConnector` 封裝對外暴露 |
 | **Main dependencies** | `mcp_bridge`（經 registry）、`core/case_api_models`、`core/comments` |
 | **Key files** | `case_portal.py` |
 
@@ -440,7 +456,7 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 | **runtime bootstrap 在 main** | MCP / deps 組裝仍在 `main.py`；可選未來移出，非 Sprint 1 範圍 |
 | **Decision Engine 零散 policy 呼叫** | `collection_flow`、`compose` 等仍直接使用 `deps.policy` | 可選收斂；Sprint 4 前評估 |
 | **`comment_analyzer` facade** | 向後相容薄包裝；runtime 已改用 `UnderstandingService` |
-| **Connector vs Tool Provider** | Case 讀寫經 MCP 完成，`case_portal` 同時像 Connector 又像 MCP 工具消費者 |
+| **Connector vs Tool Provider** | Case 讀寫經 MCP 完成，封裝在 `CasePortalConnector` 內；對外以 `Connector` 介面暴露 |
 | **領域邏輯在 workflow 內** | `collection_flow`、`diag_bundle`、`investigation` 的編排邏輯在 `graph.py` 中觸發 |
 
 ---

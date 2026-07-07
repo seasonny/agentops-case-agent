@@ -39,12 +39,12 @@ class CollectionFlowTests(unittest.TestCase):
         self.assertEqual(inferred["mcp_calls"][0].tool, "oc_adm_must_gather")
 
     def test_verify_attachment_on_case(self):
-        portal = mock.MagicMock()
-        portal.list_attachments.return_value = [
+        connector = mock.MagicMock()
+        connector.list_attachments.return_value = [
             {"file_name": "must-gather.tar.gz", "id": "1"},
         ]
         ok, detail, item = verify_attachment_on_case(
-            portal, "12345", "must-gather.tar.gz"
+            connector, "12345", "must-gather.tar.gz"
         )
         self.assertTrue(ok)
         self.assertIn("must-gather", detail)
@@ -61,8 +61,8 @@ class CollectionFlowTests(unittest.TestCase):
             artifact.write_text("data", encoding="utf-8")
             gather_output = f"saved to {artifact}"
 
-            portal = mock.MagicMock()
-            portal.list_attachments.return_value = [
+            connector = mock.MagicMock()
+            connector.list_attachments.return_value = [
                 {"file_name": artifact.name},
             ]
             executor = mock.MagicMock()
@@ -72,7 +72,7 @@ class CollectionFlowTests(unittest.TestCase):
                 MCPAction(tool="oc_adm_must_gather", arguments={}, label="gather"),
             ]
             outcome = process_post_execute_collection(
-                portal=portal,
+                connector=connector,
                 executor=executor,
                 policy=MCPPolicyChecker(),
                 case_id="999",

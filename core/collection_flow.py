@@ -156,11 +156,11 @@ def find_attachment_by_filename(
 
 
 def verify_attachment_on_case(
-    portal,
+    connector,
     case_id: str,
     filename: str,
 ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-    attachments = portal.list_attachments(case_id)
+    attachments = connector.list_attachments(case_id)
     if not attachments:
         return False, "Case 附件清單為空或無法讀取", None
     matched = find_attachment_by_filename(attachments, filename)
@@ -175,7 +175,7 @@ def verify_attachment_on_case(
 
 def process_post_execute_collection(
     *,
-    portal,
+    connector,
     executor,
     policy,
     case_id: str,
@@ -215,7 +215,7 @@ def process_post_execute_collection(
             result["collection_upload_result"] = str(output)
             if uploaded_ok:
                 verified, detail, _ = verify_attachment_on_case(
-                    portal, case_id, filename
+                    connector, case_id, filename
                 )
                 result["attachment_verified"] = verified
                 result["attachment_verify_detail"] = detail
@@ -258,7 +258,7 @@ def process_post_execute_collection(
 
             if uploaded:
                 verified, detail, _ = verify_attachment_on_case(
-                    portal, case_id, path.name
+                    connector, case_id, path.name
                 )
                 result["attachment_verified"] = verified
                 result["attachment_verify_detail"] = detail
