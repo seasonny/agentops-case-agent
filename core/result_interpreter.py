@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from core.case_context import truncate_for_prompt
 from core.config import INTERPRET_PROMPT_FILE
-from core.investigation import filter_follow_up_actions, investigation_settings
+from domain.case.investigation import filter_follow_up_actions, investigation_settings
 from core.llm_client import chat_json
 from core.logging import log_warning
 from core.mcp_action import build_tools_catalog

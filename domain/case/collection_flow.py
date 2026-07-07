@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from core.diag_bundle import build_upload_action
+from domain.case.diag_bundle import build_upload_action
 from core.logging import log_info, log_warning
 from core.mcp_action import MCPAction
 

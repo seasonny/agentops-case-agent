@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from core.collection_flow import (
+from domain.case.collection_flow import (
     extract_explicit_file_paths,
     extract_must_gather_artifact_path,
     find_attachment_by_filename,

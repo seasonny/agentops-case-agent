@@ -43,12 +43,13 @@ main.py 啟動 poll loop、組裝 runtime
 
 | 參考架構元件 | 現有模組（主要） | 對齊狀態 |
 |--------------|------------------|----------|
-| **Workflow Engine** | `workflow/runner.py`、`workflow/graph.py` | **已對齊（Sprint 1）** — runner 負責 poll 編排；graph 定義狀態機 |
+| **Workflow Engine** | `workflow/runner.py`、`workflow/graph.py` | **已對齊（Sprint 1）** — runner 負責 poll 編排；graph 定義狀態機，經注入的 Domain hooks 呼叫領域步驟 |
 | **Understanding** | `core/understanding/`、`participants`、`trigger`、`result_interpreter`、`collaboration_reasoner` | **已對齊（Sprint 2）** — `UnderstandingService` 單一入口；語意與 routing 分離 |
 | **Decision Engine** | `core/decision/`、`mcp_policy`、`approval` | **已對齊（Sprint 3）** — `DecisionEngine` 單一入口；workflow `policy` / 核准閘門經此元件 |
 | **Tool Provider** | `bridges/mcp_*`、`core/mcp_action`、routing helpers | 較好 — MCP 抽象已成形 |
 | **Response** | `reply_composer`、`reply_guardrail`、`reply_grounding`、`case_portal` | 分散 — 無單一模組邊界 |
 | **Connector（事件來源）** | `connectors/`、`bridges/case_portal.py` | **已對齊（Sprint 4）** — `Connector` 介面 + `CasePortalConnector` 實作 |
+| **Domain（Case 參考實作）** | `domain/case/` | **已對齊（Sprint 5）** — collection / bundle / investigation 邏輯與 `CaseDomainHooks` 編排掛鉤 |
 
 ---
 
@@ -73,10 +74,10 @@ main.py 啟動 poll loop、組裝 runtime
 | | |
 |---|---|
 | **Purpose** | Workflow Engine — poll 編排與 LangGraph 狀態機 |
-| **Responsibility** | `runner.py`：單次 poll 週期（讀留言、triage、invoke workflow、持久化 memory）；`graph.py`：定義狀態機，依序呼叫理解、政策、執行、解讀、收斂、撰寫、發送回覆；管理單輪內 investigate loop |
-| **Main dependencies** | `bridges/case_portal`、`core/` 中 understanding、policy、executor、composer、guardrail、memory 等 |
+| **Responsibility** | `runner.py`：單次 poll 週期（讀留言、triage、invoke workflow、持久化 memory）；`graph.py`：定義通用狀態機骨架，經 `WorkflowDeps.domain_hooks` 呼叫領域步驟（collection、bundle、investigation） |
+| **Main dependencies** | `connectors/`、`domain/case/`（hooks）、`core/` 中 understanding、decision、executor、composer、guardrail、memory 等 |
 | **Key files** | `runner.py`（`process_poll_cycle`）、`graph.py`（`AgentState`、`WorkflowDeps`、`build_workflow`） |
-| **Future evolution** | 領域專屬步驟（collection、bundle、investigation）可能移出，使 graph 專注編排 |
+| **Future evolution** | 其他產品可注入不同 Domain hooks，無需修改 graph 骨架 |
 
 #### `workflow/runner.py`
 
@@ -86,7 +87,7 @@ main.py 啟動 poll loop、組裝 runtime
 | **Responsibility** | cooldown / session 限制檢查；讀取並 enrich 留言；觸發與 triage；組裝 workflow state 並 `app.invoke`；run report、webhook、memory 持久化；poll 間隔 sleep |
 | **Main dependencies** | `connectors/`、`workflow/graph`、`core/`（comments、trigger、memory、audit 等） |
 | **Key files** | `runner.py` |
-| **Future evolution** | 領域步驟可能移出，使 graph 專注編排（Sprint 5） |
+| **Future evolution** | 無 — poll 編排邊界已就位（Sprint 1） |
 
 ---
 
@@ -100,9 +101,23 @@ main.py 啟動 poll loop、組裝 runtime
 | **Key files** | `base.py`（`Connector` Protocol）、`case_portal.py`（`CasePortalConnector`） |
 | **Future evolution** | 未來可新增 Jira / ServiceNow 實作，不修改 Workflow Engine |
 
-**Runtime 呼叫：** `workflow/runner.py` → `connector.poll_events()`；`workflow/graph.py` `post` → `connector.send_response()`。
+**Runtime 呼叫：** `workflow/runner.py` → `connector.poll_events()`；`workflow/graph.py` `post` → `connector.send_response()`；`collection` / `bundle` / `investigate_prepare` → `deps.domain_hooks`。
 
 > **與 Tool Provider 的邊界：** Connector 負責「與營運系統對話」（讀留言、發回覆）；MCP Registry 負責「執行操作」（oc、shell、must-gather）。Case Portal MCP 是 Connector 實作的內部細節。
+
+---
+
+### `domain/case/`
+
+| | |
+|---|---|
+| **Purpose** | Case Agent 領域層 — Reference Implementation 專屬業務流程 |
+| **Responsibility** | `collection_flow`：must-gather / 附件上傳閉環；`diag_bundle`：長輸出打包上傳；`investigation`：單輪 ReAct 調查迴圈；`hooks.py`：`CaseDomainHooks` 供 graph 注入呼叫 |
+| **Main dependencies** | `connectors/`、`core/mcp_action`、`core/mcp_policy` |
+| **Key files** | `hooks.py`（`CaseDomainHooks`）、`collection_flow.py`、`diag_bundle.py`、`investigation.py` |
+| **Future evolution** | 其他產品可新增 `domain/jira/` 等，不修改 workflow 骨架 |
+
+**Runtime 呼叫：** `main.py` → `CaseDomainHooks(config)` 注入 `WorkflowDeps`；`workflow/graph.py` `collection` / `bundle` / `investigate_prepare` 節點經 hooks 執行。
 
 ---
 
@@ -159,7 +174,7 @@ main.py 啟動 poll loop、組裝 runtime
 |------|---------|----------------|-----------------|
 | `understanding/service.py` | Understanding 單一入口 | `UnderstandingService.analyze()` — policy precheck、action inference、semantic understanding 編排 | `action_inference`、`semantic`、`mcp_policy` |
 | `understanding/semantic.py` | 語意理解 | LLM triage、無 LLM fallback、clarify 豐富化 | `llm_client`、`action_inference` |
-| `understanding/action_inference.py` | 確定性 action 推斷 | shell / cluster read / collection 路由（產出建議動作，非許可） | `shell_diagnostics`、`cluster_read_routing`、`collection_flow` |
+| `understanding/action_inference.py` | 確定性 action 推斷 | shell / cluster read / collection 路由（產出建議動作，非許可） | `shell_diagnostics`、`cluster_read_routing`、`domain/case/collection_flow` |
 | `understanding/models.py` | 理解資料模型 | `CommentAnalysis`、`VALID_ACTION_TYPES` | `mcp_action` |
 | `comment_analyzer.py` | 向後相容 facade | 委派至 `UnderstandingService`；保留既有 import 路徑 | `understanding/service` |
 | `participants.py` | 留言作者角色解析 | 確定性判斷 Support / Customer / Agent / ignored | `agent_settings`、`dev_mode` |
@@ -236,23 +251,24 @@ main.py 啟動 poll loop、組裝 runtime
 
 ---
 
-#### Case 領域邏輯（Reference Implementation Domain）
+#### Case 領域邏輯（已移至 `domain/case/`）
 
 Case Agent 專屬的業務流程步驟。屬於**參考實作**的領域層，不是通用 Enterprise Agent 核心。
 
 | 模組 | Purpose | Responsibility | Main dependencies |
 |------|---------|----------------|-----------------|
-| `collection_flow.py` | 收集上傳閉環 | must-gather / sosreport / 附件上傳與驗證流程 | `diag_bundle`、`mcp_action` |
-| `diag_bundle.py` | 診斷輸出打包 | 長 MCP 輸出溢出為附件而非塞進留言 | `mcp_action` |
-| `investigation.py` | 單輪調查迴圈 | Guardrailed ReAct：同一 poll 週期內 Reason → Act → Observe 迭代 | `mcp_action` |
+| `domain/case/collection_flow.py` | 收集上傳閉環 | must-gather / sosreport / 附件上傳與驗證流程 | `diag_bundle`、`mcp_action` |
+| `domain/case/diag_bundle.py` | 診斷輸出打包 | 長 MCP 輸出溢出為附件而非塞進留言 | `mcp_action` |
+| `domain/case/investigation.py` | 單輪調查迴圈 | Guardrailed ReAct：同一 poll 週期內 Reason → Act → Observe 迭代 | `mcp_action` |
+| `domain/case/hooks.py` | 編排掛鉤 | `CaseDomainHooks` — graph 注入的 collection / bundle / investigate 步驟 | 上述三模組 |
 | `comments.py` | 留言工具函式 | 排序、hash、handled 狀態、Support 候選收集 | `participants`（間接） |
 | `case_api_models.py` | API 資料正規化 | 將 Red Hat Case API payload 轉為內部 comment 格式 | — |
 | `case_context.py` | Case 歷史脈絡 | 從留言組裝 prompt 用的 case history 文字 | `comments` |
 | `case_context_memory.py` | Case 級記憶 | 診斷歷史、假設累積 | `memory` |
 
-**Key files：** `collection_flow.py`、`comments.py`、`case_api_models.py`
+**Key files：** `domain/case/hooks.py`、`comments.py`、`case_api_models.py`
 
-**Future evolution：** 領域步驟可能移入 `workflows/case/` 類似目錄，與通用 Workflow Engine 分離。
+**Future evolution：** 其他產品 Agent 可新增平行 `domain/` 套件。
 
 ---
 
@@ -454,10 +470,10 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 |------|------|
 | **`analysis_prefilled` 雙路徑** | Poll 週期在 `runner.py` 先分析並 prefill state；workflow `analyze` 節點因此常 skip — 設計如此，非 bug |
 | **runtime bootstrap 在 main** | MCP / deps 組裝仍在 `main.py`；可選未來移出，非 Sprint 1 範圍 |
-| **Decision Engine 零散 policy 呼叫** | `collection_flow`、`compose` 等仍直接使用 `deps.policy` | 可選收斂；Sprint 4 前評估 |
+| **Decision Engine 零散 policy 呼叫** | `domain/case/collection_flow`、`compose` 等仍直接使用 `deps.policy` | 可選收斂 |
 | **`comment_analyzer` facade** | 向後相容薄包裝；runtime 已改用 `UnderstandingService` |
 | **Connector vs Tool Provider** | Case 讀寫經 MCP 完成，封裝在 `CasePortalConnector` 內；對外以 `Connector` 介面暴露 |
-| **領域邏輯在 workflow 內** | `collection_flow`、`diag_bundle`、`investigation` 的編排邏輯在 `graph.py` 中觸發 |
+| ~~**領域邏輯在 workflow 內**~~ | **已解決（Sprint 5）** — 編排邏輯移至 `domain/case/hooks.py`，graph 經注入呼叫 |
 
 ---
 

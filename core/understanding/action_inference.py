@@ -11,7 +11,7 @@ from core.cluster_read_routing import (
     infer_cluster_read_actions_from_text,
     is_cluster_read_only_request,
 )
-from core.collection_flow import (
+from domain.case.collection_flow import (
     infer_explicit_upload_analysis,
     infer_must_gather_analysis,
 )

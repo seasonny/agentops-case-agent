@@ -10,18 +10,8 @@ from core.understanding import UnderstandingService
 from core.understanding.models import CommentAnalysis
 from core.decision import DecisionEngine
 from core.audit_trail import AuditTrail
-from core.collection_flow import process_post_execute_collection
-from core.diag_bundle import (
-    build_bundle_content,
-    build_upload_action,
-    should_bundle_outputs,
-    write_output_bundle,
-)
 from core.agent_settings import get_reply_prefix
-from core.investigation import (
-    serialize_actions as serialize_investigate_actions,
-    should_continue_investigation,
-)
+from domain.case import CaseDomainHooks
 from core.logging import log_info, log_warning
 from core.mcp_action import MCPAction, MCPExecutor
 from core.mcp_policy import MCPPolicyChecker
@@ -116,6 +106,7 @@ class WorkflowDeps:
     convergence: CaseConvergenceAssessor
     composer: ReplyComposer
     config: Dict[str, Any]
+    domain_hooks: CaseDomainHooks
     audit: Optional[AuditTrail] = None
 
 
@@ -331,133 +322,28 @@ def build_workflow(deps: WorkflowDeps):
         }
 
     def collection_node(state: AgentState) -> Dict[str, Any]:
-        actions = _actions_from_state(state)
-        results = state.get("execution_results", [])
-        case_id = str(state.get("case_id", "")).strip()
-        dry_run = state.get("dry_run", False)
-
-        if dry_run:
-            would_upload = any(
-                a.tool in ("oc_adm_must_gather", "upload_attachment_rh_portal")
-                for a in actions
-            )
-            if would_upload:
-                log_info("dry_run_collection", tools=[a.tool for a in actions])
-            return {
-                "collection_uploaded": False,
-                "collection_upload_filename": "",
-                "collection_upload_path": "",
-                "collection_upload_result": "(dry-run) collection follow-up skipped",
-                "attachment_verified": False,
-                "attachment_verify_detail": "",
-            }
-
-        if state.get("action_type") != "call_mcp" or not actions or not state.get("policy_passed", False):
-            return {
-                "collection_uploaded": False,
-                "collection_upload_filename": "",
-                "collection_upload_path": "",
-                "collection_upload_result": "",
-                "attachment_verified": False,
-                "attachment_verify_detail": "",
-            }
-
-        outcome = process_post_execute_collection(
+        return deps.domain_hooks.run_collection_step(
             connector=deps.connector,
             executor=deps.executor,
             policy=deps.policy,
-            case_id=case_id,
-            actions=actions,
-            execution_results=results,
-            dry_run=dry_run,
+            case_id=str(state.get("case_id", "")).strip(),
+            dry_run=bool(state.get("dry_run")),
+            action_type=state.get("action_type", "no_action"),
+            policy_passed=bool(state.get("policy_passed", False)),
+            actions=_actions_from_state(state),
+            results=state.get("execution_results", []),
         )
-        patch: Dict[str, Any] = {
-            "collection_uploaded": outcome.get("collection_uploaded", False),
-            "collection_upload_filename": outcome.get("collection_upload_filename", ""),
-            "collection_upload_path": outcome.get("collection_upload_path", ""),
-            "collection_upload_result": outcome.get("collection_upload_result", ""),
-            "attachment_verified": outcome.get("attachment_verified", False),
-            "attachment_verify_detail": outcome.get("attachment_verify_detail", ""),
-        }
-        if "execution_results" in outcome:
-            patch["execution_results"] = outcome["execution_results"]
-        return patch
 
     def bundle_node(state: AgentState) -> Dict[str, Any]:
-        actions = _actions_from_state(state)
-        results = state.get("execution_results", [])
-        blocked_commands = list(state.get("blocked_commands") or [])
-        case_id = str(state.get("case_id", "")).strip()
-
-        if not should_bundle_outputs(
-            config=deps.config,
-            actions=actions,
-            execution_results=results,
-            blocked_commands=blocked_commands,
-        ):
-            return {
-                "diag_bundle_uploaded": False,
-                "diag_bundle_filename": "",
-                "diag_bundle_path": "",
-                "diag_bundle_upload_result": "",
-            }
-
-        content = build_bundle_content(
-            case_id=case_id,
-            actions=actions,
-            execution_results=results,
-            blocked_commands=blocked_commands,
+        return deps.domain_hooks.run_bundle_step(
+            executor=deps.executor,
             policy=deps.policy,
+            case_id=str(state.get("case_id", "")).strip(),
+            dry_run=bool(state.get("dry_run")),
+            actions=_actions_from_state(state),
+            results=state.get("execution_results", []),
+            blocked_commands=list(state.get("blocked_commands") or []),
         )
-        bundle_path = write_output_bundle(deps.config, content, case_id=case_id)
-        filename = bundle_path.name
-        log_info(
-            "diag_bundle_written",
-            path=str(bundle_path),
-            bytes=len(content.encode("utf-8")),
-        )
-
-        if state.get("dry_run"):
-            log_info("dry_run_diag_bundle_upload", path=str(bundle_path))
-            return {
-                "diag_bundle_uploaded": False,
-                "diag_bundle_filename": filename,
-                "diag_bundle_path": str(bundle_path),
-                "diag_bundle_upload_result": f"(dry-run) would upload {bundle_path}",
-            }
-
-        if not case_id:
-            return {
-                "diag_bundle_uploaded": False,
-                "diag_bundle_filename": filename,
-                "diag_bundle_path": str(bundle_path),
-                "diag_bundle_upload_result": "case_id missing; bundle written locally only",
-            }
-
-        upload_action = build_upload_action(case_id, bundle_path)
-        passed, reason = deps.policy.check_action(upload_action)
-        if not passed:
-            log_warning("diag_bundle_upload_blocked", reason=reason)
-            return {
-                "diag_bundle_uploaded": False,
-                "diag_bundle_filename": filename,
-                "diag_bundle_path": str(bundle_path),
-                "diag_bundle_upload_result": reason,
-            }
-
-        upload_result = deps.executor.run_action(upload_action)
-        uploaded = "error" not in upload_result.lower()
-        log_info(
-            "diag_bundle_uploaded" if uploaded else "diag_bundle_upload_failed",
-            filename=filename,
-            case_id=case_id,
-        )
-        return {
-            "diag_bundle_uploaded": uploaded,
-            "diag_bundle_filename": filename,
-            "diag_bundle_path": str(bundle_path),
-            "diag_bundle_upload_result": upload_result,
-        }
 
     def interpret_node(state: AgentState) -> Dict[str, Any]:
         actions = _actions_from_state(state)
@@ -487,34 +373,17 @@ def build_workflow(deps: WorkflowDeps):
             "interpretation_findings": interpretation.get("findings", ""),
             "interpretation_next_steps": interpretation.get("next_steps", []),
             "needs_more_evidence": bool(interpretation.get("needs_more_evidence")),
-            "follow_up_mcp_actions": serialize_investigate_actions(follow_up),
+            "follow_up_mcp_actions": deps.domain_hooks.serialize_follow_up_actions(follow_up),
         }
 
     def investigate_prepare_node(state: AgentState) -> Dict[str, Any]:
-        follow_up = list(state.get("follow_up_mcp_actions") or [])
-        next_step = int(state.get("investigate_step") or 0) + 1
-        log_info(
-            "investigate_prepare",
-            step=next_step,
-            tools=[item.get("tool") for item in follow_up if isinstance(item, dict)],
+        return deps.domain_hooks.run_investigate_prepare_step(
+            audit=deps.audit,
+            comment_id=state.get("comment_id"),
+            dry_run=bool(state.get("dry_run")),
+            follow_up_mcp_actions=state.get("follow_up_mcp_actions") or [],
+            investigate_step=int(state.get("investigate_step") or 0),
         )
-        if deps.audit:
-            deps.audit.record(
-                "investigate_follow_up",
-                comment_id=state.get("comment_id"),
-                dry_run=bool(state.get("dry_run")),
-                investigate_step=next_step,
-                tools=[item.get("tool") for item in follow_up if isinstance(item, dict)],
-            )
-        return {
-            "mcp_actions": follow_up,
-            "action_type": "call_mcp",
-            "investigate_step": next_step,
-            "needs_more_evidence": False,
-            "follow_up_mcp_actions": [],
-            "policy_passed": True,
-            "policy_reason": "",
-        }
 
     def collaborate_node(state: AgentState) -> Dict[str, Any]:
         action_type = state.get("action_type", "no_action")
@@ -759,9 +628,7 @@ def build_workflow(deps: WorkflowDeps):
         return "interpret"
 
     def _route_after_interpret(state: AgentState) -> str:
-        if should_continue_investigation(state, deps.config):
-            return "investigate_prepare"
-        return "collection"
+        return deps.domain_hooks.route_after_interpret(state)
 
     workflow.set_entry_point("analyze")
     workflow.add_edge("analyze", "policy")

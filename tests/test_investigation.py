@@ -1,6 +1,6 @@
 import unittest
 
-from core.investigation import (
+from domain.case.investigation import (
     filter_follow_up_actions,
     investigation_settings,
     should_continue_investigation,

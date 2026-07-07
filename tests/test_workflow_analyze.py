@@ -2,6 +2,7 @@ import unittest
 from unittest import mock
 
 from core.decision.models import DecisionResult
+from domain.case import CaseDomainHooks
 from workflow.graph import AgentState, WorkflowDeps, build_workflow
 
 
@@ -31,6 +32,7 @@ class WorkflowAnalyzeSkipTests(unittest.TestCase):
             convergence=mock.MagicMock(),
             composer=mock.MagicMock(),
             config={},
+            domain_hooks=CaseDomainHooks({}),
         )
         deps.policy.dangerous_handling = "skip_and_continue"
         deps.policy.is_dangerous_command.return_value = (False, "")

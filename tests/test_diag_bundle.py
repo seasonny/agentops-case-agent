@@ -1,6 +1,6 @@
 import unittest
 
-from core.diag_bundle import (
+from domain.case.diag_bundle import (
     build_bundle_content,
     resolve_bundle_filename,
     should_bundle_outputs,

@@ -31,6 +31,7 @@ from core.reply_guardrail import ReplyGuardrail
 from core.result_interpreter import ResultInterpreter
 from core.setup_check import run_setup_check
 from core.trigger import TriggerConfig
+from domain.case import CaseDomainHooks
 from workflow.graph import WorkflowDeps, build_workflow
 from workflow.runner import process_poll_cycle
 
@@ -199,6 +200,7 @@ def main() -> None:
         convergence=CaseConvergenceAssessor(config),
         composer=composer,
         config=config,
+        domain_hooks=CaseDomainHooks(config),
         audit=None,
     )
     app = build_workflow(deps)

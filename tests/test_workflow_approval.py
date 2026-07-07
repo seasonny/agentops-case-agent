@@ -3,6 +3,7 @@ from unittest import mock
 
 from core.decision.models import DecisionResult
 from core.mcp_action import MCPAction
+from domain.case import CaseDomainHooks
 from workflow.graph import AgentState, WorkflowDeps, build_workflow
 
 
@@ -26,6 +27,15 @@ class WorkflowApprovalTests(unittest.TestCase):
                 },
                 "diagnostics": {"bundle_output": {"mode": "off"}},
             },
+            domain_hooks=CaseDomainHooks(
+                {
+                    "approval": {
+                        "enabled": True,
+                        "required_tools": ["oc_adm_must_gather"],
+                    },
+                    "diagnostics": {"bundle_output": {"mode": "off"}},
+                }
+            ),
         )
         deps.policy.dangerous_handling = "skip_and_continue"
         deps.policy.is_dangerous_command.return_value = (False, "")

@@ -95,7 +95,9 @@ make policy-dump   # 輸出編譯後安全政策
 
 ```
 main.py              # CLI 入口
-workflow/graph.py    # LangGraph workflow
+workflow/runner.py   # poll 編排
+workflow/graph.py    # LangGraph workflow 骨架
+domain/case/         # Case 領域步驟（collection、bundle、investigation）
 core/                # 設定、觸發、policy、guardrail、LLM
 bridges/             # MCP registry、Case portal
 config/              # agent_config.json、policy.yaml、prompts

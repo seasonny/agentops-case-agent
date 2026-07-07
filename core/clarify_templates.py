@@ -6,7 +6,7 @@ import re
 from typing import Any, Dict, List, Optional, Sequence
 
 from core.config import CONFIG_DIR
-from core.collection_flow import (
+from domain.case.collection_flow import (
     is_must_gather_request,
     is_sosreport_request,
     is_upload_request,

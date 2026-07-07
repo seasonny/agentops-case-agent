@@ -3,6 +3,7 @@ from unittest import mock
 
 from core.decision.models import DecisionResult
 from core.mcp_action import MCPAction
+from domain.case import CaseDomainHooks
 from workflow.graph import AgentState, WorkflowDeps, build_workflow
 
 
@@ -27,6 +28,7 @@ def _policy_result(
 
 
 def _base_deps(**overrides):
+    config = overrides.get("config", {"diagnostics": {"bundle_output": {"mode": "off"}}})
     deps = WorkflowDeps(
         connector=mock.MagicMock(),
         executor=mock.MagicMock(),
@@ -38,7 +40,8 @@ def _base_deps(**overrides):
         collaboration=mock.MagicMock(),
         convergence=mock.MagicMock(),
         composer=mock.MagicMock(),
-        config={"diagnostics": {"bundle_output": {"mode": "off"}}},
+        config=config,
+        domain_hooks=CaseDomainHooks(config),
     )
     deps.policy.dangerous_handling = "skip_and_continue"
     deps.policy.is_dangerous_command.return_value = (False, "")
@@ -74,6 +77,8 @@ def _base_deps(**overrides):
     }
     for key, value in overrides.items():
         setattr(deps, key, value)
+    if "config" in overrides and "domain_hooks" not in overrides:
+        deps.domain_hooks = CaseDomainHooks(deps.config)
     return deps
 
 
@@ -161,7 +166,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         deps.composer.compose.return_value = "upload done"
         app = build_workflow(deps)
 
-        with mock.patch("workflow.graph.process_post_execute_collection") as proc:
+        with mock.patch("domain.case.hooks.process_post_execute_collection") as proc:
             proc.return_value = {
                 "collection_uploaded": True,
                 "collection_upload_filename": "must-gather.tar.gz",
@@ -305,7 +310,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         deps.composer.compose.return_value = "partial reply"
         app = build_workflow(deps)
 
-        with mock.patch("workflow.graph.process_post_execute_collection") as proc:
+        with mock.patch("domain.case.hooks.process_post_execute_collection") as proc:
             proc.return_value = {
                 "collection_uploaded": False,
                 "collection_upload_filename": "",

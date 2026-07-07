@@ -94,7 +94,7 @@ interpret → collection → bundle → convergence → compose → post
 
 `policy` 短路：`call_mcp` 被擋 → 直接 `compose`。
 
-PoC 報告：`python main.py --report`。上傳閉環見 `core/collection_flow.py`。
+PoC 報告：`python main.py --report`。上傳閉環見 `domain/case/collection_flow.py`。
 
 ### action_type
 
