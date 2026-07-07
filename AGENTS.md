@@ -1,6 +1,10 @@
 # AgentOps Case Agent — AI 協作指南
 
-本檔案供 **Cursor / AI Agent** 在每次新 session 開始時閱讀。目標：讓 Agent 在**不猜測**的前提下完成任務，並在結束時留下可交接的狀態。
+本檔案供 **Cursor / AI Agent** 在每次新 session 使用。目標：讓 Agent 在**不猜測**的前提下完成任務，並在結束時留下可交接的狀態。
+
+> **從 [docs/README.md](docs/README.md) 開始**，依該頁「建議閱讀順序」執行。完成 architecture 第一階段後，繼續 [docs/.ai/README.md](docs/.ai/README.md)（AI Collaboration Guide）。
+
+**在理解閱讀順序中的必要步驟前，不要修改程式碼。**
 
 ---
 
@@ -129,10 +133,12 @@ docs/                # 架構、政策、MCP 契約
 
 ## 文件索引
 
-完整文件地圖見 **[docs/README.md](docs/README.md)**。快速連結：
+完整文件地圖見 **[docs/README.md](../README.md)**。快速連結：
 
 | 文件 | 用途 |
 |------|------|
+| [docs/README.md](docs/README.md) | **Repository 唯一文件入口** |
+| [docs/.ai/README.md](docs/.ai/README.md) | AI Collaboration Guide（接續 architecture 之後） |
 | [README.md](README.md) | 安裝、設定、使用者操作 |
 | [PROGRESS.md](PROGRESS.md) | 當前進度與交接 |
 | [docs/architecture/](docs/architecture/) | 架構參考（哲學、概念、模組、詞彙） |

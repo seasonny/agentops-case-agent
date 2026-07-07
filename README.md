@@ -477,7 +477,7 @@ python main.py --reset-memory          # 清除 agent_memory.json
 
 ## 進階文件
 
-文件完整索引見 **[docs/README.md](docs/README.md)**。
+文件完整索引見 **[docs/README.md](docs/README.md)**（repository 唯一文件入口）。
 
 | 文件 | 內容 |
 |------|------|
