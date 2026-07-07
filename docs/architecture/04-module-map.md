@@ -18,12 +18,13 @@
 一次輪詢週期的高層流程：
 
 ```
-main.py 輪詢 Case 留言
-  → 角色辨識（participants）與觸發判斷（trigger）
-  → LLM 理解留言（comment_analyzer）
-  → workflow/graph.py 協調執行
-       → 政策檢查（mcp_policy）→ MCP 執行（mcp_registry）
-       → 解讀結果 → 撰寫回覆 → 出站安全 → 發回 Case
+main.py 啟動 poll loop、組裝 runtime
+  → workflow/runner.py 單次 poll 編排
+       → 讀取 Case 留言、角色辨識（participants）與觸發（trigger）
+       → LLM 理解留言（comment_analyzer）
+       → workflow/graph.py 協調執行
+            → 政策檢查（mcp_policy）→ MCP 執行（mcp_registry）
+            → 解讀結果 → 撰寫回覆 → 出站安全 → 發回 Case
 ```
 
 **三層責任分工**（改碼前先記住）：
@@ -42,12 +43,12 @@ main.py 輪詢 Case 留言
 
 | 參考架構元件 | 現有模組（主要） | 對齊狀態 |
 |--------------|------------------|----------|
-| **Workflow Engine** | `main.py`、`workflow/graph.py` | 部分 — 編排與輪詢尚未完全分離 |
+| **Workflow Engine** | `workflow/runner.py`、`workflow/graph.py` | **已對齊（Sprint 1）** — runner 負責 poll 編排；graph 定義狀態機 |
 | **Understanding** | `comment_analyzer`、`participants`、`trigger`、`result_interpreter`、`collaboration_reasoner` | 分散 — 無單一模組邊界 |
 | **Decision Engine** | `policy_compiler`、`mcp_policy`、`approval`、workflow `policy` 節點 | 缺失 — 邏輯存在但無獨立元件 |
 | **Tool Provider** | `bridges/mcp_*`、`core/mcp_action`、routing helpers | 較好 — MCP 抽象已成形 |
 | **Response** | `reply_composer`、`reply_guardrail`、`reply_grounding`、`case_portal` | 分散 — 無單一模組邊界 |
-| **Connector（事件來源）** | `case_portal`、`comments`、`main.py` 輪詢 | Case 專用 — 尚未泛化 |
+| **Connector（事件來源）** | `case_portal`、`comments`、`workflow/runner.py` poll | Case 專用 — 尚未泛化 |
 
 ---
 
@@ -57,13 +58,13 @@ main.py 輪詢 Case 留言
 
 | | |
 |---|---|
-| **Purpose** | 應用程式入口與執行迴圈 |
-| **Responsibility** | CLI 參數解析；載入設定；啟動輪詢迴圈；在進入 workflow 前完成觸發與 triage；管理 session memory；呼叫 workflow；處理審計、webhook、報告 |
-| **Main dependencies** | `bridges/`、`workflow/`、`core/` 多數模組 |
+| **Purpose** | 應用程式 CLI 入口與 runtime 啟動 |
+| **Responsibility** | CLI 參數解析；載入設定；處理 `--check` / `--report` 等一次性指令；組裝 MCP / WorkflowDeps；啟動 poll loop；KeyboardInterrupt 時保存 memory |
+| **Main dependencies** | `bridges/`、`workflow/`、`core/`（設定、memory、setup） |
 | **Key files** | `main.py` |
-| **Future evolution** | 輪詢與 workflow 啟動邏輯可能逐步移出，使入口更薄 |
+| **Future evolution** | runtime bootstrap 可能移出（見 Architecture Debt）；Connector 抽象後 poll 驅動可能改由 Connector 介面 |
 
-> **職責備註：** `main.py` 目前同時扮演 Connector 觸發、pre-workflow triage 與 runtime orchestrator。這是新人最容易困惑的地方。
+> **職責備註（Sprint 1 後）：** `main.py` 不再包含單次 poll 編排；該邏輯在 `workflow/runner.py`。
 
 ---
 
@@ -71,11 +72,21 @@ main.py 輪詢 Case 留言
 
 | | |
 |---|---|
-| **Purpose** | Workflow Engine — 協調單次 Case 處理流程 |
-| **Responsibility** | 定義 LangGraph 狀態機；依序呼叫理解、政策、執行、解讀、收斂、撰寫、發送回覆；管理單輪內的 investigate loop |
-| **Main dependencies** | `bridges/case_portal`、`core/` 中 analyzer、policy、executor、composer、guardrail 等 |
-| **Key files** | `graph.py`（`AgentState`、`WorkflowDeps`、`build_workflow`） |
+| **Purpose** | Workflow Engine — poll 編排與 LangGraph 狀態機 |
+| **Responsibility** | `runner.py`：單次 poll 週期（讀留言、triage、invoke workflow、持久化 memory）；`graph.py`：定義狀態機，依序呼叫理解、政策、執行、解讀、收斂、撰寫、發送回覆；管理單輪內 investigate loop |
+| **Main dependencies** | `bridges/case_portal`、`core/` 中 analyzer、policy、executor、composer、guardrail、memory 等 |
+| **Key files** | `runner.py`（`process_poll_cycle`）、`graph.py`（`AgentState`、`WorkflowDeps`、`build_workflow`） |
 | **Future evolution** | 領域專屬步驟（collection、bundle、investigation）可能移出，使 graph 專注編排 |
+
+#### `workflow/runner.py`
+
+| | |
+|---|---|
+| **Purpose** | Workflow Engine runtime — 單次 poll 週期編排 |
+| **Responsibility** | cooldown / session 限制檢查；讀取並 enrich 留言；觸發與 triage；組裝 workflow state 並 `app.invoke`；run report、webhook、memory 持久化；poll 間隔 sleep |
+| **Main dependencies** | `workflow/graph`、`bridges/case_portal`、`core/`（comments、trigger、memory、audit 等） |
+| **Key files** | `runner.py` |
+| **Future evolution** | Sprint 2 可能將 triage 收斂至 Understanding 邊界；Sprint 4 可能改為透過 Connector 介面取事件 |
 
 ---
 
@@ -364,12 +375,13 @@ Case Agent 專屬的業務流程步驟。屬於**參考實作**的領域層，�
 
 ```mermaid
 flowchart LR
-    Case[Red Hat Case API] <-->|MCP platform| Agent[Case Agent]
-    Agent -->|LangGraph| WF[workflow/graph.py]
+    Main[main.py] --> Runner[workflow/runner.py]
+    Runner -->|invoke| WF[workflow/graph.py]
+    Runner -->|read/write| Case[Red Hat Case API via MCP]
     WF -->|call_mcp| MCP[MCP Registry]
     MCP --> K8s[kubernetes-mcp]
     MCP --> Exec[mcp-shell-server]
-    Agent -->|LLM| Gemini[Gemini / OpenAI]
+    WF -->|LLM| Gemini[Gemini / OpenAI]
 ```
 
 ### 設定載入順序
@@ -414,8 +426,8 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 
 | 現象 | 說明 |
 |------|------|
-| **`main.py` 職責過廣** | 同時負責輪詢（Connector 行為）、pre-workflow triage、workflow 啟動、memory 管理 |
-| **Understanding 跨層** | Triage 在 `main.py` 完成，workflow `analyze` 節點常 skip；理解流程需追兩處 |
+| **Understanding 跨層** | Triage 在 `workflow/runner.py` 完成，workflow `analyze` 節點常 skip；理解流程需追兩處（Sprint 2 目標） |
+| **runtime bootstrap 在 main** | MCP / deps 組裝仍在 `main.py`；可選未來移出，非 Sprint 1 範圍 |
 | **Decision Engine 不存在** | 政策（`mcp_policy`）、核准（`approval`）、workflow `policy` 節點各自獨立，無統一決策入口 |
 | **`comment_analyzer` 邊界** | 混合 LLM 理解與確定性 routing（shell、cluster、upload） |
 | **Connector vs Tool Provider** | Case 讀寫經 MCP 完成，`case_portal` 同時像 Connector 又像 MCP 工具消費者 |
