@@ -20,7 +20,7 @@ from core.agent_settings import get_loop_guard_seconds
 from core.audit_trail import AuditTrail
 from core.case_context import build_case_history
 from core.case_context_memory import augment_case_history, record_diagnostics, record_hypothesis
-from core.comment_analyzer import CommentAnalyzer
+from core.understanding import UnderstandingService
 from core.comments import (
     collect_support_candidates,
     commands_hash,
@@ -116,7 +116,7 @@ def process_poll_cycle(
     config: Dict[str, Any],
     portal: CasePortalBridge,
     app,
-    analyzer: CommentAnalyzer,
+    understanding: UnderstandingService,
     resolver: ParticipantResolver,
     trigger_cfg: TriggerConfig,
     deps: WorkflowDeps,
@@ -210,7 +210,7 @@ def process_poll_cycle(
         comment_id = comment["id"]
         if comment_id in analysis_cache:
             return analysis_cache[comment_id]
-        analysis = analyzer.analyze(
+        analysis = understanding.analyze(
             comment.get("content", ""),
             case_history=case_history,
             comment_author=str(comment.get("author", "")),
@@ -249,7 +249,7 @@ def process_poll_cycle(
         log_info("no_new_support_requests")
     else:
         comment = support_candidates[-1]
-        analysis = comment.get("_analysis") or analyzer.analyze(
+        analysis = comment.get("_analysis") or understanding.analyze(
             comment.get("content", ""),
             case_history=case_history,
             comment_author=str(comment.get("author", "")),

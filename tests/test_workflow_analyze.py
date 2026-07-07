@@ -6,8 +6,8 @@ from workflow.graph import AgentState, WorkflowDeps, build_workflow
 
 class WorkflowAnalyzeSkipTests(unittest.TestCase):
     def test_analyze_skipped_when_prefilled(self):
-        analyzer = mock.MagicMock()
-        analyzer.analyze.return_value = mock.MagicMock(
+        understanding = mock.MagicMock()
+        understanding.analyze.return_value = mock.MagicMock(
             action_type="clarify",
             mcp_calls=[],
             commands=[],
@@ -23,7 +23,7 @@ class WorkflowAnalyzeSkipTests(unittest.TestCase):
             executor=mock.MagicMock(),
             policy=mock.MagicMock(),
             reply_guardrail=mock.MagicMock(),
-            analyzer=analyzer,
+            understanding=understanding,
             interpreter=mock.MagicMock(),
             collaboration=mock.MagicMock(),
             convergence=mock.MagicMock(),
@@ -61,7 +61,7 @@ class WorkflowAnalyzeSkipTests(unittest.TestCase):
 
         output = app.invoke(state)
 
-        analyzer.analyze.assert_not_called()
+        understanding.analyze.assert_not_called()
         self.assertEqual(output.get("action_type"), "clarify")
         self.assertEqual(output.get("request_summary"), "already analyzed")
 

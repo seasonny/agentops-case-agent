@@ -11,7 +11,7 @@ def _base_deps(**overrides):
         executor=mock.MagicMock(),
         policy=mock.MagicMock(),
         reply_guardrail=mock.MagicMock(),
-        analyzer=mock.MagicMock(),
+        understanding=mock.MagicMock(),
         interpreter=mock.MagicMock(),
         collaboration=mock.MagicMock(),
         convergence=mock.MagicMock(),

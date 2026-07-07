@@ -13,7 +13,7 @@ from core.approval import approve_fingerprint, format_pending_approvals_text
 from core.audit_trail import format_audit_report_text
 from core.case_convergence import CaseConvergenceAssessor
 from core.collaboration_reasoner import CollaborationReasoner
-from core.comment_analyzer import CommentAnalyzer
+from core.understanding import UnderstandingService
 from core.config import load_config
 from core.llm_client import require_llm
 from core.logging import log_info, log_warning
@@ -174,7 +174,7 @@ def main() -> None:
     )
     policy = MCPPolicyChecker()
     reply_guardrail = ReplyGuardrail(config, policy_checker=policy)
-    analyzer = CommentAnalyzer(
+    understanding = UnderstandingService(
         config,
         mcp_tool_names=mcp_tool_names,
         policy_checker=policy,
@@ -188,7 +188,7 @@ def main() -> None:
         executor=executor,
         policy=policy,
         reply_guardrail=reply_guardrail,
-        analyzer=analyzer,
+        understanding=understanding,
         interpreter=ResultInterpreter(config),
         collaboration=collaboration,
         convergence=CaseConvergenceAssessor(config),
@@ -216,7 +216,7 @@ def main() -> None:
                 config,
                 portal,
                 app,
-                analyzer,
+                understanding,
                 resolver,
                 trigger_cfg,
                 deps,

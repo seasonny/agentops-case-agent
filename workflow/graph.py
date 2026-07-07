@@ -6,7 +6,8 @@ from langgraph.graph import END, StateGraph
 from bridges.case_portal import CasePortalBridge
 from core.case_convergence import CaseConvergenceAssessor
 from core.collaboration_reasoner import CollaborationReasoner
-from core.comment_analyzer import CommentAnalyzer, CommentAnalysis
+from core.understanding import UnderstandingService
+from core.understanding.models import CommentAnalysis
 from core.approval import (
     filter_unapproved_actions,
     register_pending_approvals,
@@ -111,7 +112,7 @@ class WorkflowDeps:
     executor: MCPExecutor
     policy: MCPPolicyChecker
     reply_guardrail: ReplyGuardrail
-    analyzer: CommentAnalyzer
+    understanding: UnderstandingService
     interpreter: ResultInterpreter
     collaboration: CollaborationReasoner
     convergence: CaseConvergenceAssessor
@@ -208,7 +209,7 @@ def build_workflow(deps: WorkflowDeps):
 
         log_info("analyze_start", comment_id=state.get("comment_id"))
 
-        analysis = deps.analyzer.analyze(
+        analysis = deps.understanding.analyze(
             state.get("latest_msg", ""),
             case_history=state.get("case_history", ""),
         )
@@ -559,7 +560,7 @@ def build_workflow(deps: WorkflowDeps):
             request_summary=state.get("request_summary", ""),
             mcp_actions=action_labels,
             mcp_results=results_text,
-            mcp_tool_names=getattr(deps.analyzer, "mcp_tool_names", []),
+            mcp_tool_names=deps.understanding.mcp_tool_names,
             investigate_step=investigate_step,
         )
         follow_up = interpretation.get("follow_up_mcp_calls") or []

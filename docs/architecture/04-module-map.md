@@ -21,7 +21,7 @@
 main.py 啟動 poll loop、組裝 runtime
   → workflow/runner.py 單次 poll 編排
        → 讀取 Case 留言、角色辨識（participants）與觸發（trigger）
-       → LLM 理解留言（comment_analyzer）
+       → Understanding 理解留言（core/understanding/）
        → workflow/graph.py 協調執行
             → 政策檢查（mcp_policy）→ MCP 執行（mcp_registry）
             → 解讀結果 → 撰寫回覆 → 出站安全 → 發回 Case
@@ -44,7 +44,7 @@ main.py 啟動 poll loop、組裝 runtime
 | 參考架構元件 | 現有模組（主要） | 對齊狀態 |
 |--------------|------------------|----------|
 | **Workflow Engine** | `workflow/runner.py`、`workflow/graph.py` | **已對齊（Sprint 1）** — runner 負責 poll 編排；graph 定義狀態機 |
-| **Understanding** | `comment_analyzer`、`participants`、`trigger`、`result_interpreter`、`collaboration_reasoner` | 分散 — 無單一模組邊界 |
+| **Understanding** | `core/understanding/`、`participants`、`trigger`、`result_interpreter`、`collaboration_reasoner` | **已對齊（Sprint 2）** — `UnderstandingService` 單一入口；語意與 routing 分離 |
 | **Decision Engine** | `policy_compiler`、`mcp_policy`、`approval`、workflow `policy` 節點 | 缺失 — 邏輯存在但無獨立元件 |
 | **Tool Provider** | `bridges/mcp_*`、`core/mcp_action`、routing helpers | 較好 — MCP 抽象已成形 |
 | **Response** | `reply_composer`、`reply_guardrail`、`reply_grounding`、`case_portal` | 分散 — 無單一模組邊界 |
@@ -74,7 +74,7 @@ main.py 啟動 poll loop、組裝 runtime
 |---|---|
 | **Purpose** | Workflow Engine — poll 編排與 LangGraph 狀態機 |
 | **Responsibility** | `runner.py`：單次 poll 週期（讀留言、triage、invoke workflow、持久化 memory）；`graph.py`：定義狀態機，依序呼叫理解、政策、執行、解讀、收斂、撰寫、發送回覆；管理單輪內 investigate loop |
-| **Main dependencies** | `bridges/case_portal`、`core/` 中 analyzer、policy、executor、composer、guardrail、memory 等 |
+| **Main dependencies** | `bridges/case_portal`、`core/` 中 understanding、policy、executor、composer、guardrail、memory 等 |
 | **Key files** | `runner.py`（`process_poll_cycle`）、`graph.py`（`AgentState`、`WorkflowDeps`、`build_workflow`） |
 | **Future evolution** | 領域專屬步驟（collection、bundle、investigation）可能移出，使 graph 專注編排 |
 
@@ -86,7 +86,7 @@ main.py 啟動 poll loop、組裝 runtime
 | **Responsibility** | cooldown / session 限制檢查；讀取並 enrich 留言；觸發與 triage；組裝 workflow state 並 `app.invoke`；run report、webhook、memory 持久化；poll 間隔 sleep |
 | **Main dependencies** | `workflow/graph`、`bridges/case_portal`、`core/`（comments、trigger、memory、audit 等） |
 | **Key files** | `runner.py` |
-| **Future evolution** | Sprint 2 可能將 triage 收斂至 Understanding 邊界；Sprint 4 可能改為透過 Connector 介面取事件 |
+| **Future evolution** | Sprint 4 可能改為透過 Connector 介面取事件 |
 
 ---
 
@@ -141,18 +141,24 @@ main.py 啟動 poll loop、組裝 runtime
 
 | 模組 | Purpose | Responsibility | Main dependencies |
 |------|---------|----------------|-----------------|
+| `understanding/service.py` | Understanding 單一入口 | `UnderstandingService.analyze()` — policy precheck、action inference、semantic understanding 編排 | `action_inference`、`semantic`、`mcp_policy` |
+| `understanding/semantic.py` | 語意理解 | LLM triage、無 LLM fallback、clarify 豐富化 | `llm_client`、`action_inference` |
+| `understanding/action_inference.py` | 確定性 action 推斷 | shell / cluster read / collection 路由（產出建議動作，非許可） | `shell_diagnostics`、`cluster_read_routing`、`collection_flow` |
+| `understanding/models.py` | 理解資料模型 | `CommentAnalysis`、`VALID_ACTION_TYPES` | `mcp_action` |
+| `comment_analyzer.py` | 向後相容 facade | 委派至 `UnderstandingService`；保留既有 import 路徑 | `understanding/service` |
 | `participants.py` | 留言作者角色解析 | 確定性判斷 Support / Customer / Agent / ignored | `agent_settings`、`dev_mode` |
 | `trigger.py` | 觸發閘門 | 決定哪些留言可進入 triage / workflow（production vs demo） | `participants`、`dev_mode` |
-| `comment_analyzer.py` | 留言 triage | LLM 理解留言；產出 `CommentAnalysis`（意圖、行動類型、建議 MCP 動作） | `llm_client`、`mcp_policy`、多個 routing helpers |
 | `result_interpreter.py` | 執行結果解讀 | LLM 綜合 MCP 輸出，產出 findings 與 next steps | `llm_client`、`config/prompts` |
 | `collaboration_reasoner.py` | 協作回合推理 | `reply_only` / `clarify` 場景的 LLM 推理 | `llm_client`、`case_context_memory` |
 | `case_convergence.py` | 收斂評估 | 判斷 Case 是否已解決、是否應結案 | `llm_client` |
 
-**Key files：** `comment_analyzer.py`（最大）、`participants.py`、`trigger.py`、`result_interpreter.py`
+**Key files：** `understanding/service.py`、`understanding/semantic.py`、`understanding/action_inference.py`、`participants.py`、`trigger.py`
 
-**Future evolution：** 理解職責目前跨 `main.py` 與 `workflow/graph.py`；長期可能收斂為更清楚的 Understanding 邊界。
+**Runtime 呼叫：** `main.py` → `UnderstandingService` → `workflow/runner.py`（poll triage）與 `workflow/graph.py`（`analyze` 節點；`analysis_prefilled` 時 skip）。
 
-> **職責備註：** `comment_analyzer` 同時含 LLM 理解與確定性 action routing（shell、cluster、upload 推斷），邊界不夠直觀。
+**Future evolution：** `comment_analyzer` facade 可在測試遷移後移除；routing helpers（`shell_diagnostics` 等）長期可能移入 Tool Provider 層。
+
+> **職責備註（Sprint 2 後）：** 語意理解（LLM）與確定性 routing 已分離；政策 precheck 仍在 `UnderstandingService` 編排內，最終許可決策留待 Decision Engine（Sprint 3）。
 
 ---
 
@@ -404,7 +410,7 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 
 | 節點 | 角色 |
 |------|------|
-| `analyze` | 理解 SE 留言（poll 週期常 skip，因已 prefill） |
+| `analyze` | 理解 SE 留言（poll 週期已 prefill 時 skip） |
 | `policy` | 確定性決策：能否執行 MCP |
 | `execute` | 呼叫 MCP |
 | `interpret` | 解讀結果、規劃 follow-up |
@@ -426,10 +432,10 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 
 | 現象 | 說明 |
 |------|------|
-| **Understanding 跨層** | Triage 在 `workflow/runner.py` 完成，workflow `analyze` 節點常 skip；理解流程需追兩處（Sprint 2 目標） |
+| **`analysis_prefilled` 雙路徑** | Poll 週期在 `runner.py` 先分析並 prefill state；workflow `analyze` 節點因此常 skip — 設計如此，非 bug |
 | **runtime bootstrap 在 main** | MCP / deps 組裝仍在 `main.py`；可選未來移出，非 Sprint 1 範圍 |
-| **Decision Engine 不存在** | 政策（`mcp_policy`）、核准（`approval`）、workflow `policy` 節點各自獨立，無統一決策入口 |
-| **`comment_analyzer` 邊界** | 混合 LLM 理解與確定性 routing（shell、cluster、upload） |
+| **Decision Engine 不存在** | 政策（`mcp_policy`）、核准（`approval`）、workflow `policy` 節點各自獨立，無統一決策入口（**Sprint 3**） |
+| **`comment_analyzer` facade** | 向後相容薄包裝；runtime 已改用 `UnderstandingService` |
 | **Connector vs Tool Provider** | Case 讀寫經 MCP 完成，`case_portal` 同時像 Connector 又像 MCP 工具消費者 |
 | **領域邏輯在 workflow 內** | `collection_flow`、`diag_bundle`、`investigation` 的編排邏輯在 `graph.py` 中觸發 |
 
@@ -444,7 +450,7 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 → `config/policy.yaml`、`config/policy_profiles/`、`core/policy_compiler.py`、`core/mcp_policy.py`
 
 **Q: 我要改 LLM 語氣或 triage 行為，去哪？**  
-→ `config/prompts/`、`core/comment_analyzer.py`（理解邏輯）
+→ `config/prompts/`、`core/understanding/semantic.py`（語意理解）、`core/understanding/action_inference.py`（確定性 routing）
 
 **Q: 我要加 MCP 能力，去哪？**  
 → `config/policy_capability_map.yaml`、`config/policy_profiles/`、`bridges/mcp_registry.py`、`config/mcp_providers/`
