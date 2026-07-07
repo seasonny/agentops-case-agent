@@ -70,6 +70,28 @@ class AuditTrail:
             self._base(event=event, comment_id=comment_id, dry_run=dry_run, **fields),
         )
 
+    def record_decision(
+        self,
+        *,
+        comment_id: Optional[int],
+        phase: str,
+        result: Any,
+        dry_run: bool = False,
+        tools: Optional[List[str]] = None,
+    ) -> None:
+        self.record(
+            "decision",
+            comment_id=comment_id,
+            dry_run=dry_run,
+            phase=phase,
+            allowed=result.allowed,
+            reason=result.reason,
+            policy_ref=getattr(result, "policy_ref", ""),
+            requires_approval=getattr(result, "requires_approval", False),
+            risk_hint=getattr(result, "risk_hint", ""),
+            tools=tools or [],
+        )
+
     def record_policy(
         self,
         *,

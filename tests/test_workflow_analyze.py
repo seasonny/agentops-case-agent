@@ -1,6 +1,7 @@
 import unittest
 from unittest import mock
 
+from core.decision.models import DecisionResult
 from workflow.graph import AgentState, WorkflowDeps, build_workflow
 
 
@@ -22,6 +23,7 @@ class WorkflowAnalyzeSkipTests(unittest.TestCase):
             portal=mock.MagicMock(),
             executor=mock.MagicMock(),
             policy=mock.MagicMock(),
+            decision_engine=mock.MagicMock(),
             reply_guardrail=mock.MagicMock(),
             understanding=understanding,
             interpreter=mock.MagicMock(),
@@ -32,6 +34,11 @@ class WorkflowAnalyzeSkipTests(unittest.TestCase):
         )
         deps.policy.dangerous_handling = "skip_and_continue"
         deps.policy.is_dangerous_command.return_value = (False, "")
+        deps.decision_engine.evaluate_policy.return_value = DecisionResult(
+            allowed=True,
+            reason="No MCP actions to run.",
+            policy_ref="policy:test",
+        )
         deps.composer.compose.return_value = "clarify reply"
         deps.collaboration.reason.return_value = {
             "findings": "need node info",

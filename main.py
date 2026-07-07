@@ -13,6 +13,7 @@ from core.approval import approve_fingerprint, format_pending_approvals_text
 from core.audit_trail import format_audit_report_text
 from core.case_convergence import CaseConvergenceAssessor
 from core.collaboration_reasoner import CollaborationReasoner
+from core.decision import DecisionEngine
 from core.understanding import UnderstandingService
 from core.config import load_config
 from core.llm_client import require_llm
@@ -173,6 +174,7 @@ def main() -> None:
         max_output_chars=execution_cfg.get("max_output_chars", 8000),
     )
     policy = MCPPolicyChecker()
+    decision_engine = DecisionEngine(policy, config)
     reply_guardrail = ReplyGuardrail(config, policy_checker=policy)
     understanding = UnderstandingService(
         config,
@@ -187,6 +189,7 @@ def main() -> None:
         portal=portal,
         executor=executor,
         policy=policy,
+        decision_engine=decision_engine,
         reply_guardrail=reply_guardrail,
         understanding=understanding,
         interpreter=ResultInterpreter(config),

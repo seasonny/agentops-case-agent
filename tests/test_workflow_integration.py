@@ -1,8 +1,29 @@
 import unittest
 from unittest import mock
 
+from core.decision.models import DecisionResult
 from core.mcp_action import MCPAction
 from workflow.graph import AgentState, WorkflowDeps, build_workflow
+
+
+def _policy_result(
+    *,
+    allowed: bool = True,
+    reason: str = "Passed",
+    blocked_commands=None,
+    dangerous_command_blocked: bool = False,
+    dangerous_command_matched: str = "",
+    action_type_override: str = "",
+) -> DecisionResult:
+    return DecisionResult(
+        allowed=allowed,
+        reason=reason,
+        policy_ref="policy:test",
+        blocked_commands=list(blocked_commands or []),
+        dangerous_command_blocked=dangerous_command_blocked,
+        dangerous_command_matched=dangerous_command_matched,
+        action_type_override=action_type_override,
+    )
 
 
 def _base_deps(**overrides):
@@ -10,6 +31,7 @@ def _base_deps(**overrides):
         portal=mock.MagicMock(),
         executor=mock.MagicMock(),
         policy=mock.MagicMock(),
+        decision_engine=mock.MagicMock(),
         reply_guardrail=mock.MagicMock(),
         understanding=mock.MagicMock(),
         interpreter=mock.MagicMock(),
@@ -22,6 +44,12 @@ def _base_deps(**overrides):
     deps.policy.is_dangerous_command.return_value = (False, "")
     deps.policy.check_all.return_value = (True, "Passed")
     deps.policy.check_action.return_value = (True, "Passed")
+    deps.decision_engine.evaluate_policy.return_value = _policy_result()
+    deps.decision_engine.evaluate_approval.return_value = DecisionResult(
+        allowed=True,
+        reason="Approval not required or already granted.",
+        policy_ref="approval",
+    )
     deps.composer.compose.return_value = "composed reply"
     deps.reply_guardrail.validate.return_value = (True, "ok", "safe reply")
     deps.interpreter.interpret.return_value = {
@@ -76,7 +104,10 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(output.get("composed_reply"), "collaborative reply")
 
         deps = _base_deps()
-        deps.policy.check_all.return_value = (False, "blocked by policy")
+        deps.decision_engine.evaluate_policy.return_value = _policy_result(
+            allowed=False,
+            reason="blocked by policy",
+        )
         deps.composer.compose.return_value = "policy blocked reply"
         app = build_workflow(deps)
 
@@ -257,7 +288,10 @@ class WorkflowIntegrationTests(unittest.TestCase):
             }
         )
         deps.executor.run_many.return_value = ["first batch"]
-        deps.policy.check_all.side_effect = [(True, "Passed"), (False, "blocked follow-up")]
+        deps.decision_engine.evaluate_policy.side_effect = [
+            _policy_result(allowed=True),
+            _policy_result(allowed=False, reason="blocked follow-up"),
+        ]
         deps.interpreter.interpret.return_value = {
             "findings": "need more",
             "next_steps": [],

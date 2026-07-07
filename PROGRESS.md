@@ -11,27 +11,26 @@
 | 項目 | 狀態 |
 |------|------|
 | 產品階段 | **PoC / 內部驗證** |
-| 架構對齊 | **Sprint 2 完成** — Understanding 邊界（`core/understanding/` + `UnderstandingService`） |
-| 核心流程 | `main.py` 啟動 → `UnderstandingService` → `runner.process_poll_cycle` → LangGraph → MCP → 回覆 + guardrail |
-| 測試 | `make test` — 140 tests OK |
-| 下一 sprint | **Sprint 3 — Decision Engine**（尚未開始） |
+| 架構對齊 | **Sprint 3 完成** — Decision Engine（`core/decision/` + `DecisionEngine`） |
+| 核心流程 | `UnderstandingService` → `DecisionEngine` → LangGraph execute → MCP → 回覆 + guardrail |
+| 測試 | `make test` — 144 tests OK |
+| 下一 sprint | **Sprint 4 — Connector 抽象**（尚未開始） |
 
 ---
 
 ## 最近完成
 
-- [x] **Sprint 2（2026-07-08）**：建立 `core/understanding/` 套件與 `UnderstandingService` 單一入口
-- [x] 分離語意理解（`semantic.py`）與確定性 routing（`action_inference.py`）
-- [x] `workflow/runner.py`、`workflow/graph.py` 改呼叫 `UnderstandingService`
-- [x] 更新 `docs/architecture/04-module-map.md` 對照 Understanding
-- [x] **Sprint 1（2026-07-07）**：建立 `workflow/runner.py`，將 `process_poll_cycle` 自 `main.py` 移出
-- [x] Harness Engineering 協作檔（AGENTS.md、Makefile、init.sh 等）
+- [x] **Sprint 3（2026-07-08）**：建立 `core/decision/` 與 `DecisionEngine` 統一決策入口
+- [x] `workflow/graph.py` `policy` / 核准閘門改經 `DecisionEngine`
+- [x] `audit_trail.record_decision()` 記錄決策結果
+- [x] **Sprint 2（2026-07-08）**：`core/understanding/` + `UnderstandingService`
+- [x] **Sprint 1（2026-07-07）**：`workflow/runner.py` Workflow Engine 邊界
 
 ---
 
 ## 進行中
 
-_（目前無 — 待指派 Sprint 3）_
+_（目前無 — 待指派 Sprint 4）_
 
 ---
 
@@ -39,7 +38,7 @@ _（目前無 — 待指派 Sprint 3）_
 
 | 優先 | 項目 | 備註 |
 |------|------|------|
-| 高 | **Sprint 3：Decision Engine** | 見 [06-architecture-alignment-plan.md](docs/architecture/06-architecture-alignment-plan.md) |
+| 高 | **Sprint 4：Connector 抽象** | 見 [06-architecture-alignment-plan.md](docs/architecture/06-architecture-alignment-plan.md) |
 | — | Outage 自動開案 | README / DEVELOPER 標記為尚未實作 |
 | — | `create_case_rh_portal` | 目前被 policy 封鎖 |
 | — | 實際 Case PoC 驗證 | 需 Red Hat OAuth + 有效 `case_id` |
@@ -52,8 +51,8 @@ _（目前無 — 待指派 Sprint 3）_
 |------|------|--------------|
 | runtime bootstrap 在 `main.py` | MCPRegistry / WorkflowDeps 組裝仍在入口 | 可選；Sprint 4 前評估 |
 | `analysis_prefilled` 雙路徑 | poll 先分析、graph `analyze` 常 skip | 設計如此；可選未來簡化 |
-| `comment_analyzer` facade | 向後相容薄包裝，runtime 已不用 | 測試遷移後可移除 |
-| Decision Engine 缺失 | 政策邏輯分散 | **Sprint 3** |
+| `comment_analyzer` facade | 向後相容薄包裝 | 測試遷移後可移除 |
+| 零散 `deps.policy` 呼叫 | collection / compose 仍直接用 policy | 可選收斂 |
 | Connector 未抽象 | Case 讀寫與 poll 耦合 | **Sprint 4** |
 
 ---
@@ -71,6 +70,24 @@ _（目前無 — 待指派 Sprint 3）_
 
 ## 變更紀錄
 
+### 2026-07-08 — Sprint 3：Decision Engine
+
+**做了什麼：**
+- 新增 `core/decision/`（`models`、`engine`）
+- `DecisionEngine.evaluate_policy()` / `evaluate_approval()` 委派至 `mcp_policy`、`approval`
+- `workflow/graph.py` `policy` 與核准閘門改經 `DecisionEngine`
+- `audit_trail.record_decision()` 記錄決策
+- 更新 `docs/architecture/04-module-map.md`
+- 新增 `tests/test_decision_engine.py`
+
+**驗證：**
+- [x] `make test`（144 OK）
+- [x] `make policy-dump` 輸出與 sprint 前一致
+- [ ] `python3 main.py --case-id=04444508`（需本機 OAuth / API key，由開發者執行）
+
+**留給下一個 session：**
+- 開始 Sprint 4（Connector 抽象）前需架構批准
+
 ### 2026-07-08 — Sprint 2：Understanding 邊界
 
 **做了什麼：**
@@ -82,10 +99,6 @@ _（目前無 — 待指派 Sprint 3）_
 
 **驗證：**
 - [x] `make test`（140 OK）
-- [ ] `python3 main.py --case-id=04444508`（需本機 OAuth / API key，由開發者執行）
-
-**留給下一個 session：**
-- 開始 Sprint 3（Decision Engine）前需架構批准
 
 ### 2026-07-07 — Sprint 1：Workflow Engine 邊界
 
@@ -97,7 +110,6 @@ _（目前無 — 待指派 Sprint 3）_
 
 **驗證：**
 - [x] `make test`（135 OK）
-- [ ] `python3 main.py --case-id=04444508`（需本機 OAuth / API key，由開發者執行）
 
 ### 2026-07-08 — 修復 `--health` CLI import
 

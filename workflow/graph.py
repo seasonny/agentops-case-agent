@@ -8,10 +8,7 @@ from core.case_convergence import CaseConvergenceAssessor
 from core.collaboration_reasoner import CollaborationReasoner
 from core.understanding import UnderstandingService
 from core.understanding.models import CommentAnalysis
-from core.approval import (
-    filter_unapproved_actions,
-    register_pending_approvals,
-)
+from core.decision import DecisionEngine
 from core.audit_trail import AuditTrail
 from core.collection_flow import process_post_execute_collection
 from core.diag_bundle import (
@@ -111,6 +108,7 @@ class WorkflowDeps:
     portal: CasePortalBridge
     executor: MCPExecutor
     policy: MCPPolicyChecker
+    decision_engine: DecisionEngine
     reply_guardrail: ReplyGuardrail
     understanding: UnderstandingService
     interpreter: ResultInterpreter
@@ -237,100 +235,24 @@ def build_workflow(deps: WorkflowDeps):
         }
 
     def policy_node(state: AgentState) -> Dict[str, Any]:
-        action_type = state.get("action_type", "no_action")
         actions = _current_batch_actions(state)
-        latest_msg = state.get("latest_msg", "")
-        blocked_commands = list(state.get("blocked_commands") or [])
-        handling = deps.policy.dangerous_handling
-
-        if handling == "reject_all":
-            is_dangerous, matched = deps.policy.is_dangerous_command(latest_msg)
-            if is_dangerous:
-                log_warning(
-                    "dangerous_command_blocked",
-                    matched=matched,
-                    comment_id=state.get("comment_id"),
-                )
-                return {
-                    "policy_passed": False,
-                    "policy_reason": (
-                        f"安全政策攔截：指令 `{matched}` 屬於危險系統操作，"
-                        "禁止執行。請提供其他非破壞性的診斷方式。"
-                    ),
-                    "dangerous_command_blocked": True,
-                    "dangerous_command_matched": matched,
-                    "action_type": "dangerous_command",
-                    "blocked_commands": blocked_commands,
-                }
-        elif blocked_commands:
-            log_info(
-                "dangerous_command_partial_skip",
-                blocked=blocked_commands,
-                comment_id=state.get("comment_id"),
-            )
-
-        if action_type != "call_mcp" or not actions:
-            if blocked_commands and action_type == "dangerous_command":
-                matched = blocked_commands[0]
-                return {
-                    "policy_passed": False,
-                    "policy_reason": (
-                        f"安全政策攔截：指令 `{matched}` 屬於危險系統操作，"
-                        "禁止執行。請提供其他非破壞性的診斷方式。"
-                    ),
-                    "dangerous_command_blocked": True,
-                    "dangerous_command_matched": matched,
-                    "action_type": "dangerous_command",
-                    "blocked_commands": blocked_commands,
-                }
-            log_info("policy_skip", reason="no_mcp_execution", action_type=action_type)
-            return {
-                "policy_passed": True,
-                "policy_reason": "No MCP actions to run.",
-                "dangerous_command_blocked": False,
-                "dangerous_command_matched": "",
-                "blocked_commands": blocked_commands,
-            }
-
-        passed, reason = deps.policy.check_all(actions)
-        if not passed:
-            log_warning("policy_blocked", tools=[a.tool for a in actions], reason=reason)
-            if deps.audit:
-                deps.audit.record_policy(
-                    comment_id=state.get("comment_id"),
-                    passed=False,
-                    reason=reason,
-                    tools=[a.tool for a in actions],
-                    dry_run=bool(state.get("dry_run")),
-                )
-            return {
-                "policy_passed": False,
-                "policy_reason": reason,
-                "dangerous_command_blocked": False,
-                "dangerous_command_matched": "",
-                "blocked_commands": blocked_commands,
-            }
-
-        log_info("policy_passed", tools=[a.tool for a in actions])
-        partial_reason = "Passed"
-        if blocked_commands:
-            skipped = ", ".join(blocked_commands)
-            partial_reason = f"Passed (skipped dangerous: {skipped})"
+        result = deps.decision_engine.evaluate_policy(
+            action_type=state.get("action_type", "no_action"),
+            actions=actions,
+            latest_msg=state.get("latest_msg", ""),
+            blocked_commands=list(state.get("blocked_commands") or []),
+            comment_id=state.get("comment_id"),
+            dry_run=bool(state.get("dry_run")),
+        )
         if deps.audit:
-            deps.audit.record_policy(
+            deps.audit.record_decision(
                 comment_id=state.get("comment_id"),
-                passed=True,
-                reason=partial_reason,
-                tools=[a.tool for a in actions],
+                phase="policy",
+                result=result,
                 dry_run=bool(state.get("dry_run")),
+                tools=[action.tool for action in actions],
             )
-        return {
-            "policy_passed": True,
-            "policy_reason": partial_reason,
-            "dangerous_command_blocked": False,
-            "dangerous_command_matched": "",
-            "blocked_commands": blocked_commands,
-        }
+        return result.to_policy_state()
 
     def execute_node(state: AgentState) -> Dict[str, Any]:
         action_type = state.get("action_type", "no_action")
@@ -345,32 +267,21 @@ def build_workflow(deps: WorkflowDeps):
             return {"execution_results": [], "status": "POLLING"}
 
         case_id = str(state.get("case_id", "")).strip()
-        unapproved = filter_unapproved_actions(case_id, actions, deps.config)
-        if unapproved:
-            pending = register_pending_approvals(
-                case_id,
-                unapproved,
-                comment_id=state.get("comment_id"),
-            )
-            log_info(
-                "approval_required",
-                comment_id=state.get("comment_id"),
-                pending=[item.get("fingerprint") for item in pending],
-            )
+        approval = deps.decision_engine.evaluate_approval(
+            case_id=case_id,
+            actions=actions,
+            comment_id=state.get("comment_id"),
+        )
+        if not approval.allowed:
             if deps.audit:
-                deps.audit.record(
-                    "approval_required",
+                deps.audit.record_decision(
                     comment_id=state.get("comment_id"),
+                    phase="approval",
+                    result=approval,
                     dry_run=bool(state.get("dry_run")),
-                    pending=pending,
+                    tools=[action.tool for action in actions],
                 )
-            return {
-                "execution_results": [],
-                "approval_required": True,
-                "approval_pending": pending,
-                "action_type": "approval_required",
-                "status": "POLLING",
-            }
+            return approval.to_approval_state()
 
         if dry_run:
             log_info(

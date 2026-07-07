@@ -1,6 +1,7 @@
 import unittest
 from unittest import mock
 
+from core.decision.models import DecisionResult
 from core.mcp_action import MCPAction
 from workflow.graph import AgentState, WorkflowDeps, build_workflow
 
@@ -11,6 +12,7 @@ class WorkflowApprovalTests(unittest.TestCase):
             portal=mock.MagicMock(),
             executor=mock.MagicMock(),
             policy=mock.MagicMock(),
+            decision_engine=mock.MagicMock(),
             reply_guardrail=mock.MagicMock(),
             understanding=mock.MagicMock(),
             interpreter=mock.MagicMock(),
@@ -28,31 +30,42 @@ class WorkflowApprovalTests(unittest.TestCase):
         deps.policy.dangerous_handling = "skip_and_continue"
         deps.policy.is_dangerous_command.return_value = (False, "")
         deps.policy.check_all.return_value = (True, "Passed")
+        deps.decision_engine.evaluate_policy.return_value = DecisionResult(
+            allowed=True,
+            reason="Passed",
+            policy_ref="policy:test",
+        )
         deps.composer.compose.return_value = "waiting approval"
 
-        with mock.patch("workflow.graph.filter_unapproved_actions") as filt, mock.patch(
-            "workflow.graph.register_pending_approvals"
-        ) as reg:
-            action = MCPAction(tool="oc_adm_must_gather", arguments={}, label="gather")
-            filt.return_value = [action]
-            reg.return_value = [{"fingerprint": "abc123", "tool": "oc_adm_must_gather"}]
+        action = MCPAction(tool="oc_adm_must_gather", arguments={}, label="gather")
+        approval_result = mock.MagicMock()
+        approval_result.allowed = False
+        approval_result.to_approval_state.return_value = {
+            "execution_results": [],
+            "approval_required": True,
+            "approval_pending": [{"fingerprint": "abc123", "tool": "oc_adm_must_gather"}],
+            "action_type": "approval_required",
+            "status": "POLLING",
+        }
+        deps.decision_engine.evaluate_approval.return_value = approval_result
 
-            app = build_workflow(deps)
-            state: AgentState = {
-                "case_id": "12345",
-                "latest_msg": "must-gather",
-                "comment_id": 1,
-                "case_history": "",
-                "dry_run": True,
-                "analysis_prefilled": True,
-                "action_type": "call_mcp",
-                "policy_passed": True,
-                "mcp_actions": [{"tool": "oc_adm_must_gather", "arguments": {}, "label": "gather"}],
-                "blocked_commands": [],
-            }
-            output = app.invoke(state)
+        app = build_workflow(deps)
+        state: AgentState = {
+            "case_id": "12345",
+            "latest_msg": "must-gather",
+            "comment_id": 1,
+            "case_history": "",
+            "dry_run": True,
+            "analysis_prefilled": True,
+            "action_type": "call_mcp",
+            "policy_passed": True,
+            "mcp_actions": [{"tool": "oc_adm_must_gather", "arguments": {}, "label": "gather"}],
+            "blocked_commands": [],
+        }
+        output = app.invoke(state)
 
         deps.executor.run_many.assert_not_called()
+        deps.decision_engine.evaluate_approval.assert_called_once()
         self.assertTrue(output.get("approval_required"))
         self.assertEqual(output.get("action_type"), "approval_required")
 

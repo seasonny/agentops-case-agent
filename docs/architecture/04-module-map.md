@@ -23,7 +23,7 @@ main.py 啟動 poll loop、組裝 runtime
        → 讀取 Case 留言、角色辨識（participants）與觸發（trigger）
        → Understanding 理解留言（core/understanding/）
        → workflow/graph.py 協調執行
-            → 政策檢查（mcp_policy）→ MCP 執行（mcp_registry）
+            → Decision Engine 政策檢查（decision_engine）→ MCP 執行（mcp_registry）
             → 解讀結果 → 撰寫回覆 → 出站安全 → 發回 Case
 ```
 
@@ -45,7 +45,7 @@ main.py 啟動 poll loop、組裝 runtime
 |--------------|------------------|----------|
 | **Workflow Engine** | `workflow/runner.py`、`workflow/graph.py` | **已對齊（Sprint 1）** — runner 負責 poll 編排；graph 定義狀態機 |
 | **Understanding** | `core/understanding/`、`participants`、`trigger`、`result_interpreter`、`collaboration_reasoner` | **已對齊（Sprint 2）** — `UnderstandingService` 單一入口；語意與 routing 分離 |
-| **Decision Engine** | `policy_compiler`、`mcp_policy`、`approval`、workflow `policy` 節點 | 缺失 — 邏輯存在但無獨立元件 |
+| **Decision Engine** | `core/decision/`、`mcp_policy`、`approval` | **已對齊（Sprint 3）** — `DecisionEngine` 單一入口；workflow `policy` / 核准閘門經此元件 |
 | **Tool Provider** | `bridges/mcp_*`、`core/mcp_action`、routing helpers | 較好 — MCP 抽象已成形 |
 | **Response** | `reply_composer`、`reply_guardrail`、`reply_grounding`、`case_portal` | 分散 — 無單一模組邊界 |
 | **Connector（事件來源）** | `case_portal`、`comments`、`workflow/runner.py` poll | Case 專用 — 尚未泛化 |
@@ -158,25 +158,29 @@ main.py 啟動 poll loop、組裝 runtime
 
 **Future evolution：** `comment_analyzer` facade 可在測試遷移後移除；routing helpers（`shell_diagnostics` 等）長期可能移入 Tool Provider 層。
 
-> **職責備註（Sprint 2 後）：** 語意理解（LLM）與確定性 routing 已分離；政策 precheck 仍在 `UnderstandingService` 編排內，最終許可決策留待 Decision Engine（Sprint 3）。
+> **職責備註（Sprint 2 後）：** 語意理解（LLM）與確定性 routing 已分離；政策 precheck 仍在 `UnderstandingService` 編排內；最終執行許可由 Decision Engine（Sprint 3）負責。
 
 ---
 
 #### 決策與治理（Decision / Governance）
 
-負責政策評估、執行許可、人工核准。**目前無單一 `decision_engine` 模組**，邏輯分散於下列檔案。
+負責政策評估、執行許可、人工核准。**Decision Engine** 為統一決策入口；底層規則仍由既有模組實作。
 
 | 模組 | Purpose | Responsibility | Main dependencies |
 |------|---------|----------------|-----------------|
+| `decision/engine.py` | Decision Engine 單一入口 | `evaluate_policy()` / `evaluate_approval()` → `DecisionResult` | `mcp_policy`、`approval` |
+| `decision/models.py` | 決策資料模型 | `DecisionContext`、`DecisionResult` | `mcp_action` |
 | `policy_compiler.py` | 政策編譯 | 將 `config/policy.yaml` + profiles 編譯為執行時規則 | `config/` 政策檔 |
-| `mcp_policy.py` | 執行時政策檢查 | 檢查 MCP 工具、argv、危險指令是否允許 | `policy_compiler` |
-| `approval.py` | 人工核准 | Human-in-the-loop：高風險動作需核准後才執行 | `enterprise`、`mcp_action` |
-| `dangerous_command_split.py` | 危險指令分割 | 將留言中的安全與危險指令分離 | — |
+| `mcp_policy.py` | 執行時政策檢查 | 檢查 MCP 工具、argv、危險指令是否允許（由 DecisionEngine 委派） | `policy_compiler` |
+| `approval.py` | 人工核准 | Human-in-the-loop：高風險動作需核准後才執行（由 DecisionEngine 委派） | `enterprise`、`mcp_action` |
+| `dangerous_command_split.py` | 危險指令分割 | 將留言中的安全與危險指令分離（Understanding 前置） | — |
 | `blocked_command_explain.py` | 阻擋說明 | 產生人類可讀的阻擋原因 | — |
 
-**Key files：** `policy_compiler.py`、`mcp_policy.py`、`approval.py`
+**Key files：** `decision/engine.py`、`policy_compiler.py`、`mcp_policy.py`、`approval.py`
 
-**Future evolution：** Phase 3 目標是將上述邏輯整合為明確的 Decision Engine。
+**Runtime 呼叫：** `workflow/graph.py` `policy` 節點 → `DecisionEngine.evaluate_policy()`；`execute` 節點核准閘門 → `DecisionEngine.evaluate_approval()`。
+
+**Future evolution：** `record_policy` 審計可逐步遷移至 `record_decision`；collection / compose 路徑中零散的 `deps.policy` 呼叫可選擇性收斂。
 
 ---
 
@@ -411,7 +415,7 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 | 節點 | 角色 |
 |------|------|
 | `analyze` | 理解 SE 留言（poll 週期已 prefill 時 skip） |
-| `policy` | 確定性決策：能否執行 MCP |
+| `policy` | 確定性決策：能否執行 MCP（經 `DecisionEngine`） |
 | `execute` | 呼叫 MCP |
 | `interpret` | 解讀結果、規劃 follow-up |
 | `compose` | 撰寫回覆（須 grounding） |
@@ -434,7 +438,7 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 |------|------|
 | **`analysis_prefilled` 雙路徑** | Poll 週期在 `runner.py` 先分析並 prefill state；workflow `analyze` 節點因此常 skip — 設計如此，非 bug |
 | **runtime bootstrap 在 main** | MCP / deps 組裝仍在 `main.py`；可選未來移出，非 Sprint 1 範圍 |
-| **Decision Engine 不存在** | 政策（`mcp_policy`）、核准（`approval`）、workflow `policy` 節點各自獨立，無統一決策入口（**Sprint 3**） |
+| **Decision Engine 零散 policy 呼叫** | `collection_flow`、`compose` 等仍直接使用 `deps.policy` | 可選收斂；Sprint 4 前評估 |
 | **`comment_analyzer` facade** | 向後相容薄包裝；runtime 已改用 `UnderstandingService` |
 | **Connector vs Tool Provider** | Case 讀寫經 MCP 完成，`case_portal` 同時像 Connector 又像 MCP 工具消費者 |
 | **領域邏輯在 workflow 內** | `collection_flow`、`diag_bundle`、`investigation` 的編排邏輯在 `graph.py` 中觸發 |
