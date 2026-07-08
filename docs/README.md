@@ -53,6 +53,7 @@
 
 | 任務 | 文件 |
 |------|------|
+| Workshop / PoC 提案、敘事、邊界 | [guides/workshop.md](guides/workshop.md) |
 | 改程式、除錯、擴充 | [guides/developer.md](guides/developer.md) |
 | 配置 `policy.yaml` | [operations/policy.md](operations/policy.md) |
 | Production 部署 | [operations/enterprise.md](operations/enterprise.md) |
@@ -87,6 +88,7 @@
 
 | 文件 | 回答的問題 |
 |------|------------|
+| [guides/workshop.md](guides/workshop.md) | Workshop 敘事、縱深防禦、PoC 邊界、寫死項目？ |
 | [guides/developer.md](guides/developer.md) | 觸發、workflow、guardrail、擴充、除錯？ |
 | [guides/mcp-providers.md](guides/mcp-providers.md) | 怎麼加 MCP provider？ |
 
@@ -149,6 +151,7 @@
 | AI 工程方法？ | [.ai/engineering-method.md](.ai/engineering-method.md) |
 | 改碼紅線？ | [operations/constraints.md](operations/constraints.md) |
 | 配 policy.yaml？ | [operations/policy.md](operations/policy.md) |
+| Workshop / PoC？ | [guides/workshop.md](guides/workshop.md) |
 | 擴充 / 除錯？ | [guides/developer.md](guides/developer.md) |
 | 安裝與執行？ | [../README.md](../README.md) |
 | 當前進度？ | [../PROGRESS.md](../PROGRESS.md) |

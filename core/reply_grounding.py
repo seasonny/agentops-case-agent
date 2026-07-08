@@ -1,17 +1,16 @@
 """Verify replies that cite execution output are grounded in real MCP results."""
 
-import re
 from typing import List, Sequence, Tuple
 
 from core.mcp_action import MCPAction
 
-_SUCCESS_OUTPUT_PATTERNS = [
-    re.compile(r"ANSWER\s+SECTION", re.I),
-    re.compile(r";\s*<<>>\s*DiG", re.I),
-    re.compile(r"\d+\s+bytes\s+from", re.I),
-    re.compile(r"icmp_seq=", re.I),
-    re.compile(r"Server:\s+\S+", re.I),
-]
+# Generic markers that a reply is quoting tool output (not scenario-specific).
+_TOOL_OUTPUT_MARKERS = (
+    "exit_code:",
+    "--- stdout ---",
+    "--- stderr ---",
+    "answer section",
+)
 
 _FAILURE_MARKERS = (
     "error:",
@@ -42,8 +41,9 @@ def results_indicate_failure(results: Sequence[str]) -> bool:
     return any(marker in blob for marker in _FAILURE_MARKERS)
 
 
-def reply_claims_diagnostic_output(reply: str) -> bool:
-    return any(pattern.search(reply) for pattern in _SUCCESS_OUTPUT_PATTERNS)
+def reply_appears_to_quote_tool_output(reply: str) -> bool:
+    lower = (reply or "").lower()
+    return any(marker in lower for marker in _TOOL_OUTPUT_MARKERS)
 
 
 def _significant_result_lines(results: Sequence[str], *, min_len: int = 8) -> List[str]:
@@ -91,13 +91,23 @@ def check_execution_grounding(
         return True, "ok"
 
     results = list(execution_results or [])
-    if reply_claims_diagnostic_output(reply_text):
-        if not results:
-            return False, "ungrounded_execution_output:no_results"
-        if results_indicate_failure(results):
+    quotes_output = reply_appears_to_quote_tool_output(reply_text)
+
+    if quotes_output and not results:
+        return False, "ungrounded_execution_output:no_results"
+
+    if not results:
+        return True, "ok"
+
+    if results_indicate_failure(results):
+        if has_substantive_overlap(reply_text, results):
+            return True, "ok"
+        if quotes_output:
             return False, "ungrounded_execution_output:success_claim_on_failure"
-        if not has_substantive_overlap(reply_text, results):
-            return False, "ungrounded_execution_output:no_overlap"
+        return True, "ok"
+
+    if quotes_output and not has_substantive_overlap(reply_text, results):
+        return False, "ungrounded_execution_output:no_overlap"
 
     return True, "ok"
 

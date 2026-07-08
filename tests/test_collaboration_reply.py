@@ -3,7 +3,6 @@ from unittest import mock
 
 from core.collaboration_reply import (
     is_echo_of_support_request,
-    is_hollow_acknowledgement,
     is_substantive_collaborative_reply,
     resolve_collaborative_reply,
 )
@@ -41,16 +40,15 @@ class CollaborationReplyTests(unittest.TestCase):
             is_echo_of_support_request(DNS_DIAGNOSIS, DNS_DIAGNOSIS)
         )
 
-    def test_hollow_acknowledgement_detected(self):
-        self.assertTrue(is_hollow_acknowledgement(HOLLOW_DRAFT))
-        self.assertFalse(is_substantive_collaborative_reply(HOLLOW_DRAFT))
+    def test_short_reply_is_not_substantive(self):
+        self.assertFalse(is_substantive_collaborative_reply("收到"))
 
     def test_good_draft_is_substantive(self):
         self.assertTrue(is_substantive_collaborative_reply(GOOD_DRAFT))
 
-    def test_resolve_returns_empty_for_hollow(self):
+    def test_resolve_blocks_echo(self):
         resolved = resolve_collaborative_reply(
-            customer_voice=HOLLOW_DRAFT,
+            customer_voice=DNS_DIAGNOSIS,
             findings="",
             request_summary=DNS_DIAGNOSIS,
         )
@@ -101,6 +99,22 @@ class CollaborationReplyTests(unittest.TestCase):
             collaboration_draft="",
         )
         self.assertIsNone(reply)
+
+    @mock.patch("core.reply_composer.chat_text", return_value=None)
+    def test_reply_only_uses_collaboration_draft_without_phrase_guard(self, _chat_text):
+        composer = ReplyComposer(load_config())
+        reply = composer.compose(
+            case_history="",
+            request_summary=DNS_DIAGNOSIS,
+            action_type="reply_only",
+            mcp_actions=[],
+            mcp_results=[],
+            policy_passed=True,
+            policy_reason="",
+            collaboration_draft=HOLLOW_DRAFT,
+        )
+        self.assertIsNotNone(reply)
+        self.assertIn("已收到", reply or "")
 
 
 if __name__ == "__main__":

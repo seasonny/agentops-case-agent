@@ -64,7 +64,7 @@ class StaleExecutionContextTests(unittest.TestCase):
         self.assertIsNone(reply)
 
     @mock.patch("core.reply_composer.chat_text", return_value=None)
-    def test_reply_only_hollow_draft_returns_none(self, _chat_text):
+    def test_reply_only_collaboration_draft_posts_when_long_enough(self, _chat_text):
         composer = ReplyComposer(load_config())
         reply = composer.compose(
             case_history="",
@@ -76,7 +76,7 @@ class StaleExecutionContextTests(unittest.TestCase):
             policy_reason="",
             collaboration_draft="了解，我們已收到 Support 的說明，會依建議安排後續處理，有進展時再回報。",
         )
-        self.assertIsNone(reply)
+        self.assertIsNotNone(reply)
 
     @mock.patch("core.reply_composer.chat_text")
     def test_reply_only_uses_collaboration_draft_when_compose_skipped(self, chat_text):

@@ -13,13 +13,14 @@
 | 產品階段 | **PoC / 內部驗證** |
 | 架構對齊 | **Sprint 5 完成** — Domain 分離（`domain/case/` + `CaseDomainHooks`） |
 | 核心流程 | Connector poll → Understanding → Decision → LangGraph（經 Domain hooks）→ Connector 回覆 |
-| 測試 | `make test` — 148 tests OK |
-| 下一 sprint | **架構對齊計畫已完成** — 見 [06-architecture-alignment-plan.md](docs/architecture/06-architecture-alignment-plan.md) |
+| 測試 | `make test` — 131 tests OK |
+| 下一 sprint | **Milestone B** — 真實 Case dry-run / workshop demo（見 [guides/workshop.md](docs/guides/workshop.md)） |
 
 ---
 
 ## 最近完成
 
+- [x] **Milestone A — LLM-first 簡化（2026-07-08）**：移除 PoC 確定性 triage；新增 `workshop.md`；同步 module-map
 - [x] **Sprint 5（2026-07-08）**：建立 `domain/case/`；移動 `collection_flow`、`diag_bundle`、`investigation`
 - [x] `CaseDomainHooks` 編排掛鉤注入 `WorkflowDeps`；`graph.py` 不再直接 import 領域模組
 - [x] **Sprint 4（2026-07-08）**：建立 `connectors/` 與 `Connector` 介面；`CasePortalConnector` 為首個實作
@@ -53,7 +54,7 @@ _（目前無）_
 | `analysis_prefilled` 雙路徑 | poll 先分析、graph `analyze` 常 skip | 設計如此；可選未來簡化 |
 | `comment_analyzer` facade | 向後相容薄包裝 | 測試遷移後可移除 |
 | 零散 `deps.policy` 呼叫 | domain collection / compose 仍直接用 policy | 可選收斂 |
-| Response 模組邊界 | reply 相關邏輯分散在 `core/` | 可選未來整合 |
+| must-gather stdout 路徑解析 | `collection_flow.extract_must_gather_artifact_path` 用 regex 從 MCP 文字輸出抓 tarball 路徑 | MCP / must-gather 契約改回傳 structured `artifact_path` 時 |
 
 ---
 
@@ -69,6 +70,18 @@ _（目前無）_
 ---
 
 ## 變更紀錄
+
+### 2026-07-08 — Milestone A：LLM-first 簡化
+
+**做了什麼：**
+- 移除 PoC 確定性 triage（`shell_diagnostics`、`cluster_read_routing`、`action_inference`、`clarify_templates`）
+- Triage 改 LLM + MCP catalog；保留 policy / grounding / guardrail / audit
+- 協作品質交 `collaborate_support` LLM；移除空洞片語表
+- 新增 `docs/guides/workshop.md`、`core/explicit_request.py`
+- 同步 `04-module-map.md`、`developer.md`、`constraints.md`
+
+**驗證：**
+- [x] `make test`（131 OK）
 
 ### 2026-07-08 — Sprint 5：Domain 分離
 

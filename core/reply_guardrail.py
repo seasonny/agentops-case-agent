@@ -5,7 +5,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.mcp_policy import MCPPolicyChecker
 from core.collaboration_reply import is_echo_of_support_request
-from core.reply_grounding import check_execution_grounding, reply_claims_diagnostic_output
+from core.reply_grounding import (
+    check_execution_grounding,
+    reply_appears_to_quote_tool_output,
+)
 
 DEFAULT_SENSITIVE_PATTERNS: List[str] = [
     r"\bsk-[a-zA-Z0-9]{20,}\b",
@@ -78,7 +81,7 @@ class ReplyGuardrail:
             if not grounded:
                 return False, ground_reason, ""
 
-        if action_type in ("reply_only", "clarify") and reply_claims_diagnostic_output(text):
+        if action_type in ("reply_only", "clarify") and reply_appears_to_quote_tool_output(text):
             return False, "text_only_turn_with_execution_output", ""
 
         if (

@@ -5,7 +5,7 @@
 | **Purpose** | 說明 Case Agent 的實作行為：觸發、workflow、guardrail、擴充與除錯 |
 | **Audience** | 修改程式碼的開發者 |
 | **Source of truth** | 本文件是**實作行為**的權威來源 |
-| **Related** | [architecture/04-module-map.md](../architecture/04-module-map.md)、[operations/policy.md](../operations/policy.md)、[operations/constraints.md](../operations/constraints.md) |
+| **Related** | [guides/workshop.md](workshop.md)、[architecture/04-module-map.md](../architecture/04-module-map.md)、[operations/policy.md](../operations/policy.md)、[operations/constraints.md](../operations/constraints.md) |
 
 > 客戶安裝與操作見 [README.md](../../README.md)。架構概念見 [architecture/](../architecture/)。政策設定見 [operations/policy.md](../operations/policy.md)。
 
@@ -107,18 +107,19 @@ PoC 報告：`python main.py --report`。上傳閉環見 `domain/case/collection
 
 ---
 
-## 五層 Guardrail（L0–L5）
+## 四層 Guardrail（L0–L4 + Audit）
 
 術語定義見 [architecture/05-vocabulary.md](../architecture/05-vocabulary.md) § Policy / Guardrail。
+
+Triage（理解、選工具）由 **LLM** 負責；下列層次為 **確定性治理**，不可只靠 prompt。
 
 | 層 | 模組 | 內容 |
 |----|------|------|
 | L0 | `trigger` + `participants` | 誰的留言、是否該處理 |
 | L1 | `mcp_policy`（dangerous keywords） | 危險關鍵字 |
 | L2 | `policy.yaml` / `mcp_policy` | 能力包、工具白黑名單 |
-| L3 | `shell_diagnostics` + `comment_analyzer` | 確定性路由 |
-| L4 | Exec MCP（`exec_argv`） | argv 白名單 |
-| L5 | `reply_guardrail` + `reply_grounding` | 回覆防偽、出站掃描 |
+| L3 | Exec MCP（`exec_argv`） | argv 白名單（執行面） |
+| L4 | `reply_grounding` + `reply_guardrail` | 回覆防偽、出站掃描 |
 
 政策設定完整說明：[operations/policy.md](../operations/policy.md)
 
@@ -128,10 +129,9 @@ PoC 報告：`python main.py --report`。上傳閉環見 `domain/case/collection
 
 開關：`guardrails.reply.block_ungrounded_execution_output`（預設 true）。
 
-### Shell 診斷路由
+### Shell 診斷
 
-- `is_shell_only_request` → 確定性 `exec_argv`，不讓 LLM 選 `namespaces_list`
-- LLM 選錯工具時 → `shell_diag_routing_override`
+Triage 不再使用確定性 shell/cluster 路由。Support 請求由 LLM 依 MCP catalog 選工具；**policy** 與 **Exec MCP argv 白名單** 在執行面 enforce。
 
 ---
 
@@ -154,7 +154,7 @@ JSON 一行一筆到 stdout。常見 `event`：
 |-------|------|
 | `trigger_candidate` | 找到待處理 Support 留言 |
 | `comment_analyzed` | LLM / 確定性 triage 完成 |
-| `shell_diag_deterministic_route` | dig/ping 走 exec_argv |
+| `shell_diag_deterministic_route` | （已移除）舊版確定性 shell 路由 |
 | `mcp_call` | MCP 執行 |
 | `reply_grounding_fallback` | 防偽擋下 |
 | `reply_guardrail_blocked` | 出站被擋 |

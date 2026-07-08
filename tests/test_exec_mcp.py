@@ -8,7 +8,6 @@ from core.exec_tool_adapter import (
 )
 from core.mcp_policy import MCPPolicyChecker
 from core.mcp_action import MCPAction, extract_mcp_tool_text
-from core.shell_diagnostics import infer_exec_argv_action, infer_shell_diag_actions
 
 
 class ExecToolAdapterTests(unittest.TestCase):
@@ -39,31 +38,6 @@ class ExecToolAdapterTests(unittest.TestCase):
         # format_shell_execute_text is plain text; extract should pass through
         text = extract_mcp_tool_text(result)
         self.assertIn("hi", text)
-
-
-class ShellDiagnosticsTests(unittest.TestCase):
-    def test_infer_exec_argv_action(self):
-        action = infer_exec_argv_action("dig google.com.tw")
-        self.assertIsNotNone(action)
-        assert action is not None
-        self.assertEqual(action.tool, "exec_argv")
-        self.assertEqual(action.arguments["argv"], ["dig", "google.com.tw"])
-
-    def test_infer_shell_diag_prefers_pods_when_configured(self):
-        config = {
-            "diagnostics": {
-                "pods_exec": {"namespace": "openshift-console", "pod": "console-abc"}
-            }
-        }
-        actions = infer_shell_diag_actions(["dig example.com"], config, allow_host_exec=True)
-        self.assertEqual(len(actions), 1)
-        self.assertEqual(actions[0].tool, "pods_exec")
-
-    def test_infer_shell_diag_falls_back_to_host_exec(self):
-        config = {"diagnostics": {"pods_exec": {"namespace": "", "pod": ""}}}
-        actions = infer_shell_diag_actions(["ping 8.8.8.8"], config, allow_host_exec=True)
-        self.assertEqual(len(actions), 1)
-        self.assertEqual(actions[0].tool, "exec_argv")
 
 
 class HostExecPolicyTests(unittest.TestCase):

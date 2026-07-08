@@ -172,9 +172,9 @@ main.py 啟動 poll loop、組裝 runtime
 
 | 模組 | Purpose | Responsibility | Main dependencies |
 |------|---------|----------------|-----------------|
-| `understanding/service.py` | Understanding 單一入口 | `UnderstandingService.analyze()` — policy precheck、action inference、semantic understanding 編排 | `action_inference`、`semantic`、`mcp_policy` |
-| `understanding/semantic.py` | 語意理解 | LLM triage、無 LLM fallback、clarify 豐富化 | `llm_client`、`action_inference` |
-| `understanding/action_inference.py` | 確定性 action 推斷 | shell / cluster read / collection 路由（產出建議動作，非許可） | `shell_diagnostics`、`cluster_read_routing`、`domain/case/collection_flow` |
+| `understanding/service.py` | Understanding 單一入口 | `UnderstandingService.analyze()` — 危險指令 precheck、LLM triage 編排 | `semantic`、`mcp_policy` |
+| `understanding/semantic.py` | 語意理解 | LLM triage；無 LLM 時最小 fallback（非確定性路由） | `llm_client` |
+| `explicit_request.py` | Demo 觸發 heuristic | `looks_like_explicit_support_request` — 僅 demo 觸發 / LLM 不可用判斷；**非 MCP 路由** | — |
 | `understanding/models.py` | 理解資料模型 | `CommentAnalysis`、`VALID_ACTION_TYPES` | `mcp_action` |
 | `comment_analyzer.py` | 向後相容 facade | 委派至 `UnderstandingService`；保留既有 import 路徑 | `understanding/service` |
 | `participants.py` | 留言作者角色解析 | 確定性判斷 Support / Customer / Agent / ignored | `agent_settings`、`dev_mode` |
@@ -183,13 +183,13 @@ main.py 啟動 poll loop、組裝 runtime
 | `collaboration_reasoner.py` | 協作回合推理 | `reply_only` / `clarify` 場景的 LLM 推理 | `llm_client`、`case_context_memory` |
 | `case_convergence.py` | 收斂評估 | 判斷 Case 是否已解決、是否應結案 | `llm_client` |
 
-**Key files：** `understanding/service.py`、`understanding/semantic.py`、`understanding/action_inference.py`、`participants.py`、`trigger.py`
+**Key files：** `understanding/service.py`、`understanding/semantic.py`、`explicit_request.py`、`participants.py`、`trigger.py`
 
 **Runtime 呼叫：** `main.py` → `UnderstandingService` → `workflow/runner.py`（poll triage）與 `workflow/graph.py`（`analyze` 節點；`analysis_prefilled` 時 skip）。
 
-**Future evolution：** `comment_analyzer` facade 可在測試遷移後移除；routing helpers（`shell_diagnostics` 等）長期可能移入 Tool Provider 層。
+**Future evolution：** `comment_analyzer` facade 可在測試遷移後移除。
 
-> **職責備註（Sprint 2 後）：** 語意理解（LLM）與確定性 routing 已分離；政策 precheck 仍在 `UnderstandingService` 編排內；最終執行許可由 Decision Engine（Sprint 3）負責。
+> **職責備註（2026-07-08）：** Triage 以 **LLM + MCP catalog** 為主；確定性 shell/cluster/clarify 路由已移除。政策 precheck 在 `UnderstandingService`；執行許可由 Decision Engine 負責。
 
 ---
 
@@ -223,13 +223,11 @@ main.py 啟動 poll loop、組裝 runtime
 |------|---------|----------------|-----------------|
 | `mcp_action.py` | MCP 動作模型與執行器 | 定義 `MCPAction`；`MCPExecutor` 經 registry 呼叫工具 | `bridges/mcp_registry` |
 | `mcp_discovery.py` | MCP 自動發現 | 依 PATH / 環境變數組裝預設 provider 設定 | `config` |
-| `shell_diagnostics.py` | Shell 診斷路由 | 將 dig/ping 等請求路由到 exec MCP（確定性，非 LLM） | `mcp_action`、`exec_tool_adapter` |
-| `cluster_read_routing.py` | 叢集唯讀路由 | 將 oc/kubectl get 類請求映射到 cluster-read 工具 | `mcp_action` |
 | `exec_tool_adapter.py` | Exec 工具適配 | 將 logical `exec_argv` 映射到 provider 特定 schema | — |
 
-**Key files：** `mcp_action.py`、`shell_diagnostics.py`、`mcp_discovery.py`
+**Key files：** `mcp_action.py`、`mcp_discovery.py`、`exec_tool_adapter.py`
 
-**Future evolution：** 可能抽象為不限 MCP 的 Tool Provider 介面；routing 邏輯可能從 Understanding 移入此層。
+**Future evolution：** 可能抽象為不限 MCP 的 Tool Provider 介面。
 
 ---
 
@@ -242,8 +240,7 @@ main.py 啟動 poll loop、組裝 runtime
 | `reply_composer.py` | 回覆撰寫 | LLM 撰寫繁中回覆；整合 MCP 結果與分析脈絡 | `llm_client`、`config/prompts` |
 | `reply_grounding.py` | 回覆防偽 | 確保回覆中引用的執行結果真實存在於 MCP 輸出 | — |
 | `reply_guardrail.py` | 出站安全 | 發送前掃描敏感資訊與違規內容 | `redaction` |
-| `collaboration_reply.py` | 協作回覆輔助 | `reply_only` / `clarify` 場景的回覆組裝與 echo 檢查 | — |
-| `clarify_templates.py` | Clarify 模板 | 情境化追問模板（非關鍵字路由） | `config/clarify_templates.yaml` |
+| `collaboration_reply.py` | 協作回覆輔助 | echo 檢查、最短長度；品質由 `collaboration_reasoner` LLM 負責 | — |
 
 **Key files：** `reply_composer.py`、`reply_grounding.py`、`reply_guardrail.py`
 
@@ -257,7 +254,7 @@ Case Agent 專屬的業務流程步驟。屬於**參考實作**的領域層，�
 
 | 模組 | Purpose | Responsibility | Main dependencies |
 |------|---------|----------------|-----------------|
-| `domain/case/collection_flow.py` | 收集上傳閉環 | must-gather / sosreport / 附件上傳與驗證流程 | `diag_bundle`、`mcp_action` |
+| `domain/case/collection_flow.py` | 收集上傳閉環 | **執行後** must-gather 產物解析 → 上傳 → 附件驗證（非 comment triage） | `diag_bundle`、`mcp_action` |
 | `domain/case/diag_bundle.py` | 診斷輸出打包 | 長 MCP 輸出溢出為附件而非塞進留言 | `mcp_action` |
 | `domain/case/investigation.py` | 單輪調查迴圈 | Guardrailed ReAct：同一 poll 週期內 Reason → Act → Observe 迭代 | `mcp_action` |
 | `domain/case/hooks.py` | 編排掛鉤 | `CaseDomainHooks` — graph 注入的 collection / bundle / investigate 步驟 | 上述三模組 |
@@ -343,8 +340,7 @@ Case Agent 專屬的業務流程步驟。屬於**參考實作**的領域層，�
 | `policy.yaml` | 安全政策 profile 選擇與覆寫 |
 | `policy_profiles/` | minimal / diagnostic / enterprise 能力開關 |
 | `policy_capability_map.yaml` | 能力名稱 → MCP 工具映射 |
-| `prompts/` | LLM prompt 模板（analyze、compose、interpret 等） |
-| `clarify_templates.yaml` | Clarify 情境模板 |
+| `prompts/` | LLM prompt 模板（analyze、compose、interpret、collaborate 等） |
 | `mcp_providers/*.example.json` | 多產品 MCP provider 設定範例 |
 | `local.json` | 本機覆寫（gitignore，不提交） |
 
@@ -486,7 +482,7 @@ analyze → policy → execute ⇄ interpret → convergence → compose → pos
 → `config/policy.yaml`、`config/policy_profiles/`、`core/policy_compiler.py`、`core/mcp_policy.py`
 
 **Q: 我要改 LLM 語氣或 triage 行為，去哪？**  
-→ `config/prompts/`、`core/understanding/semantic.py`（語意理解）、`core/understanding/action_inference.py`（確定性 routing）
+→ `config/prompts/`、`core/understanding/semantic.py`、`config/prompts/collaborate_support.txt`
 
 **Q: 我要加 MCP 能力，去哪？**  
 → `config/policy_capability_map.yaml`、`config/policy_profiles/`、`bridges/mcp_registry.py`、`config/mcp_providers/`

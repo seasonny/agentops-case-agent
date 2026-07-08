@@ -33,10 +33,11 @@
 | 誰的留言要處理 | `core/participants.py`、`core/trigger.py` |
 | 能否呼叫 MCP | `core/mcp_policy.py`、`core/policy_compiler.py` |
 | 危險指令攔截 | `core/mcp_policy.py`、`core/dangerous_command_split.py` |
-| Shell 路由 | `core/shell_diagnostics.py` |
 | Exec argv 白名單 | policy profile + exec MCP |
 | 回覆防偽 | `core/reply_grounding.py` |
 | 出站敏感資訊 | `core/reply_guardrail.py` |
+
+**Triage（理解、選工具）交給 LLM**；上表為執行前/出站前的 **enforce 層**。禁止以確定性 regex 路由取代 LLM triage。
 
 **禁止：** 為了「讓 LLM 更聽話」而移除或繞過上述檢查。
 

@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.dev_mode import is_dev_mode
 from core.participants import ParticipantResolver
-from core.shell_diagnostics import looks_like_explicit_support_request
+from core.explicit_request import looks_like_explicit_support_request
 
 
 class TriggerConfig:

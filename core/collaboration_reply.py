@@ -4,14 +4,7 @@ from __future__ import annotations
 
 import re
 
-# Hollow acknowledgement phrases — never post without substantive content.
-_HOLLOW_SNIPPETS = (
-    "已收到 Support 的說明",
-    "會依建議安排後續處理",
-    "我們會依指示配合後續排查",
-    "有進展時再回報",
-    "感謝 Support 說明，我們會再確認相關細節後回覆",
-)
+_MIN_COLLABORATIVE_CHARS = 20
 
 
 def _normalize_overlap_text(text: str) -> str:
@@ -19,7 +12,7 @@ def _normalize_overlap_text(text: str) -> str:
 
 
 def is_echo_of_support_request(reply_body: str, request_summary: str) -> bool:
-    """True only when the reply largely copies Support's message verbatim."""
+    """True when the reply largely copies Support's message verbatim."""
     body = _normalize_overlap_text(reply_body)
     summary = _normalize_overlap_text(request_summary)
     if not body or not summary or len(summary) < 12:
@@ -36,25 +29,10 @@ def is_echo_of_support_request(reply_body: str, request_summary: str) -> bool:
     return False
 
 
-def is_hollow_acknowledgement(text: str) -> bool:
-    cleaned = (text or "").strip()
-    if not cleaned:
-        return True
-    if len(cleaned) < 20:
-        return True
-    hits = sum(1 for snippet in _HOLLOW_SNIPPETS if snippet in cleaned)
-    if hits >= 2:
-        return True
-    if hits >= 1 and len(cleaned) < 120:
-        return True
-    return False
-
-
 def is_substantive_collaborative_reply(text: str) -> bool:
+    """Minimal structural check — quality bar is primarily LLM collaborate + prompt."""
     cleaned = (text or "").strip()
-    if not cleaned or len(cleaned) < 20:
-        return False
-    return not is_hollow_acknowledgement(cleaned)
+    return len(cleaned) >= _MIN_COLLABORATIVE_CHARS
 
 
 def resolve_collaborative_reply(

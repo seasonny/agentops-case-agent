@@ -11,10 +11,6 @@ from core.reply_grounding import (
     has_substantive_overlap,
 )
 from core.reply_guardrail import ReplyGuardrail
-from core.shell_diagnostics import (
-    is_shell_only_request,
-    needs_shell_diag_routing_override,
-)
 
 
 class ReplyGroundingTests(unittest.TestCase):
@@ -101,40 +97,6 @@ class ReplyGuardrailGroundingTests(unittest.TestCase):
         )
         self.assertTrue(passed)
         self.assertIn("exit_code: 1", safe)
-
-
-class ShellRoutingTests(unittest.TestCase):
-    def test_shell_only_request(self):
-        self.assertTrue(is_shell_only_request("[SE] 請執行\ndig www.google.com.tw"))
-        self.assertFalse(is_shell_only_request("請執行 oc get node"))
-
-    def test_routing_override_when_llm_picks_cluster_tools(self):
-        self.assertTrue(
-            needs_shell_diag_routing_override(
-                [MCPAction(tool="namespaces_list", arguments={})],
-                "dig www.google.com.tw",
-            )
-        )
-        self.assertFalse(
-            needs_shell_diag_routing_override(
-                [MCPAction(tool="exec_argv", arguments={"argv": ["dig", "x.com"]})],
-                "dig www.google.com.tw",
-            )
-        )
-
-    def test_deterministic_route_skips_wrong_llm_tools(self):
-        config = load_config()
-        init_agent_settings(config)
-        analyzer = CommentAnalyzer(
-            config,
-            mcp_tool_names=["exec_argv", "namespaces_list"],
-            policy_checker=MCPPolicyChecker(),
-            allow_host_exec=True,
-        )
-        result = analyzer.analyze("[SE] 請執行\ndig www.google.com.tw")
-        self.assertEqual(result.action_type, "call_mcp")
-        self.assertEqual(result.source, "route")
-        self.assertEqual(result.mcp_calls[0].tool, "exec_argv")
 
 
 if __name__ == "__main__":

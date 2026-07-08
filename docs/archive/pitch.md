@@ -1,4 +1,5 @@
-> **ARCHIVED** — 本文件為客戶 PoC 簡報，**不是**架構真相來源。架構請見 [architecture/](../architecture/)。路線圖 Phase 編號與現行 [architecture/03-evolution-roadmap.md](../architecture/03-evolution-roadmap.md) 不同。
+> **ARCHIVED** — 本文件為客戶 PoC 簡報，**不是**架構真相來源。  
+> **Workshop 敘事 SSOT** → [guides/workshop.md](../guides/workshop.md)。架構請見 [architecture/](../architecture/)。
 
 # Case Agent — 電梯簡報
 

@@ -25,12 +25,12 @@ class TestUnderstandingService(unittest.TestCase):
         self.assertEqual(result.action_type, "no_action")
 
     @mock.patch("core.llm_client.is_llm_available", return_value=False)
-    def test_cluster_read_route_without_llm(self, _mock_llm):
+    def test_explicit_request_without_llm_returns_unavailable_reply(self, _mock_llm):
         result = self.service.analyze(MIXED_COMMENT)
         self.assertTrue(result.actionable)
-        self.assertEqual(result.action_type, "call_mcp")
-        self.assertEqual(result.source, "route")
-        self.assertEqual(len(result.mcp_calls), 2)
+        self.assertEqual(result.action_type, "reply_only")
+        self.assertEqual(result.source, "unavailable")
+        self.assertEqual(result.mcp_calls, [])
 
     def test_comment_analyzer_facade_matches_service(self):
         from core.comment_analyzer import CommentAnalyzer

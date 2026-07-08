@@ -6,21 +6,21 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from core.comments import normalize_comment_text
 from core.dangerous_command_split import split_comment_requests
+from core.explicit_request import looks_like_explicit_support_request
 from core.llm_client import chat_json as default_chat_json
 from core.llm_client import is_llm_available as default_is_llm_available
 from core.logging import log_info, log_warning
 from core.mcp_action import MCPAction
 from core.mcp_policy import MCPPolicyChecker
-from core.shell_diagnostics import (
-    extract_shell_commands_from_text,
-    looks_like_explicit_support_request,
-)
-from core.understanding.action_inference import ActionInference
 from core.understanding.models import CommentAnalysis
 from core.understanding.semantic import SemanticUnderstanding
 
 ChatJsonFn = Callable[..., Optional[Dict[str, Any]]]
 IsLlmAvailableFn = Callable[[Dict[str, Any]], bool]
+
+_LLM_TRIAGE_FAILED_MSG = (
+    "LLM triage failed for this comment. Skipping automated action until the model is available."
+)
 
 
 def _attach_blocked_commands(
@@ -97,37 +97,29 @@ class UnderstandingService:
         self.mcp_tool_names = mcp_tool_names or []
         self.policy = policy_checker or MCPPolicyChecker()
         self.allow_host_exec = allow_host_exec
-        self._action_inference = ActionInference(
-            config,
-            mcp_tool_names=self.mcp_tool_names,
-            policy=self.policy,
-            allow_host_exec=allow_host_exec,
-        )
         self._semantic = SemanticUnderstanding(
             config,
             llm_config=self.llm_config,
             mcp_tool_names=self.mcp_tool_names,
-            action_inference=self._action_inference,
-            allow_host_exec=allow_host_exec,
         )
 
-    def _finalize_routed(
+    def _finalize(
         self,
-        routed: CommentAnalysis,
+        analysis: CommentAnalysis,
         blocked_commands: List[str],
     ) -> CommentAnalysis:
-        routed = _filter_dangerous_mcp_calls(routed, self.policy)
-        routed = _attach_blocked_commands(routed, blocked_commands)
+        analysis = _filter_dangerous_mcp_calls(analysis, self.policy)
+        analysis = _attach_blocked_commands(analysis, blocked_commands)
         log_info(
             "comment_analyzed",
-            source=routed.source,
-            action_type=routed.action_type,
-            actionable=routed.actionable,
-            mcp_calls=[a.tool for a in routed.mcp_calls],
-            intent=routed.intent,
-            blocked_commands=routed.blocked_commands,
+            source=analysis.source,
+            action_type=analysis.action_type,
+            actionable=analysis.actionable,
+            mcp_calls=[a.tool for a in analysis.mcp_calls],
+            intent=analysis.intent,
+            blocked_commands=analysis.blocked_commands,
         )
-        return routed
+        return analysis
 
     def _evaluate_dangerous_split(
         self,
@@ -192,14 +184,9 @@ class UnderstandingService:
         if blocked_early is not None:
             return blocked_early
 
-        routed = self._action_inference.try_deterministic_route(working_text)
-        if routed is not None:
-            return self._finalize_routed(routed, blocked_commands)
-
         if not is_llm_available_fn(self.llm_config):
             result = self._semantic.analyze_without_llm(working_text)
-            result = _filter_dangerous_mcp_calls(result, self.policy)
-            return _attach_blocked_commands(result, blocked_commands)
+            return self._finalize(result, blocked_commands)
 
         llm_result = self._semantic.analyze_with_llm(
             working_text,
@@ -210,62 +197,22 @@ class UnderstandingService:
             chat_fn=chat_fn,
         )
         if llm_result is not None:
-            llm_result = _filter_dangerous_mcp_calls(llm_result, self.policy)
-            llm_result = _attach_blocked_commands(llm_result, blocked_commands)
-            log_info(
-                "comment_analyzed",
-                source=llm_result.source,
-                action_type=llm_result.action_type,
-                actionable=llm_result.actionable,
-                mcp_calls=[a.tool for a in llm_result.mcp_calls],
-                intent=llm_result.intent,
-                blocked_commands=llm_result.blocked_commands,
-                comment_author=comment_author or None,
-                resolved_role=resolved_role or None,
-                trigger_reason=trigger_reason or None,
-            )
-            return llm_result
+            return self._finalize(llm_result, blocked_commands)
 
         if looks_like_explicit_support_request(working_text):
-            cluster_inferred = self._action_inference.infer_cluster_read_fallback(working_text)
-            if cluster_inferred:
-                result = CommentAnalysis(
+            return self._finalize(
+                CommentAnalysis(
                     actionable=True,
-                    action_type="call_mcp",
-                    mcp_calls=cluster_inferred,
+                    action_type="reply_only",
                     intent="diagnostic",
-                    requires_execution=True,
-                    summary="Support request (cluster read infer after LLM failure).",
-                    source="infer",
-                )
-                result = _filter_dangerous_mcp_calls(result, self.policy)
-                return _attach_blocked_commands(result, blocked_commands)
-            shell_commands = extract_shell_commands_from_text(working_text)
-            inferred = self._action_inference.infer_shell_diag_actions(shell_commands)
-            if inferred:
-                route = inferred[0].tool
-                result = CommentAnalysis(
-                    actionable=True,
-                    action_type="call_mcp",
-                    mcp_calls=inferred,
-                    intent="diagnostic",
-                    requires_execution=True,
-                    summary=f"Support request ({route} infer after LLM failure).",
-                    source="infer",
-                )
-                result = _filter_dangerous_mcp_calls(result, self.policy)
-                return _attach_blocked_commands(result, blocked_commands)
-            result = CommentAnalysis(
-                actionable=True,
-                action_type="reply_only",
-                intent="diagnostic",
-                summary="Support requested diagnostics (LLM triage failed).",
-                source="unavailable",
+                    summary=_LLM_TRIAGE_FAILED_MSG,
+                    source="unavailable",
+                ),
+                blocked_commands,
             )
-            return _attach_blocked_commands(result, blocked_commands)
 
         if normalize_comment_text(working_text):
-            return _attach_blocked_commands(
+            return self._finalize(
                 self._semantic.collaboration_reply(working_text, source="infer"),
                 blocked_commands,
             )

@@ -1,4 +1,4 @@
-"""Collection and upload closed-loop helpers (must-gather, attachments)."""
+"""Collection and upload closed-loop helpers (post-execute, not triage)."""
 
 from __future__ import annotations
 
@@ -7,49 +7,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from domain.case.diag_bundle import build_upload_action
-from core.logging import log_info, log_warning
+from core.logging import log_info
 from core.mcp_action import MCPAction
 
-_MUST_GATHER_RE = re.compile(
-    r"must[\s_-]?gather|oc\s+adm\s+must-gather",
-    re.IGNORECASE,
-)
-_SOSREPORT_RE = re.compile(r"\bsosreport\b", re.IGNORECASE)
-_UPLOAD_VERB_RE = re.compile(
-    r"\b(upload|attach|attachment|上傳|附件)\b",
-    re.IGNORECASE,
-)
+# Parse must-gather MCP stdout for a tarball path (post-execute only, not triage).
+# TECH DEBT: regex depends on oc adm must-gather log format. Prefer structured MCP
+# response (e.g. JSON artifact_path) when the tool contract supports it.
 _MUST_GATHER_ARTIFACT_RE = re.compile(
     r"(/[^\s'\"<>]+must-gather[^\s'\"<>]*\.(?:tar\.gz|tgz|tar))",
     re.IGNORECASE,
 )
-_EXPLICIT_PATH_RE = re.compile(
-    r"(/[\w./-]+\.(?:tar\.gz|tgz|tar|zip|txt|log|yaml|yml|json|xml|gz))",
-    re.IGNORECASE,
-)
-
-
-def is_must_gather_request(text: str) -> bool:
-    return bool(_MUST_GATHER_RE.search(text or ""))
-
-
-def is_sosreport_request(text: str) -> bool:
-    return bool(_SOSREPORT_RE.search(text or ""))
-
-
-def is_upload_request(text: str) -> bool:
-    return bool(_UPLOAD_VERB_RE.search(text or ""))
-
-
-def extract_explicit_file_paths(text: str) -> List[str]:
-    seen: set[str] = set()
-    paths: List[str] = []
-    for match in _EXPLICIT_PATH_RE.finditer(text or ""):
-        candidate = match.group(1).strip().rstrip(".,;:")
-        if candidate not in seen:
-            seen.add(candidate)
-            paths.append(candidate)
-    return paths
 
 
 def extract_must_gather_artifact_path(result_text: str) -> Optional[str]:
@@ -59,84 +26,6 @@ def extract_must_gather_artifact_path(result_text: str) -> Optional[str]:
     if not match:
         return None
     return match.group(1).strip()
-
-
-def tool_available(tool_name: str, mcp_tool_names: Sequence[str]) -> bool:
-    return tool_name in set(mcp_tool_names or [])
-
-
-def policy_allows_tool(policy, tool_name: str) -> bool:
-    passed, _ = policy.check_action(MCPAction(tool=tool_name, arguments={}, label=tool_name))
-    return passed
-
-
-def build_must_gather_action() -> MCPAction:
-    return MCPAction(
-        tool="oc_adm_must_gather",
-        arguments={},
-        label="oc adm must-gather",
-    )
-
-
-def build_file_upload_action(case_id: str, file_path: Path) -> MCPAction:
-    return MCPAction(
-        tool="upload_attachment_rh_portal",
-        arguments={
-            "case-number": case_id,
-            "file": str(file_path),
-        },
-        label=f"upload {file_path.name}",
-    )
-
-
-def infer_must_gather_analysis(
-    comment_text: str,
-    *,
-    mcp_tool_names: Sequence[str],
-    policy,
-) -> Optional[Dict[str, Any]]:
-    if not is_must_gather_request(comment_text):
-        return None
-    tool = "oc_adm_must_gather"
-    if not tool_available(tool, mcp_tool_names):
-        return None
-    if not policy_allows_tool(policy, tool):
-        return None
-    return {
-        "summary": "Support requested must-gather collection.",
-        "mcp_calls": [build_must_gather_action()],
-    }
-
-
-def infer_explicit_upload_analysis(
-    comment_text: str,
-    case_id: str,
-    *,
-    mcp_tool_names: Sequence[str],
-    policy,
-) -> Optional[Dict[str, Any]]:
-    if not is_upload_request(comment_text):
-        return None
-    tool = "upload_attachment_rh_portal"
-    if not tool_available(tool, mcp_tool_names):
-        return None
-    if not policy_allows_tool(policy, tool):
-        return None
-
-    for raw_path in extract_explicit_file_paths(comment_text):
-        path = Path(raw_path)
-        if not path.is_file():
-            continue
-        action = build_file_upload_action(case_id, path)
-        passed, reason = policy.check_action(action)
-        if not passed:
-            log_warning("upload_path_policy_blocked", path=raw_path, reason=reason)
-            continue
-        return {
-            "summary": f"Support requested upload of {path.name}.",
-            "mcp_calls": [action],
-        }
-    return None
 
 
 def find_attachment_by_filename(
