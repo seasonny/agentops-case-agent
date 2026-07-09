@@ -10,8 +10,8 @@ from core.config import ANALYZE_PROMPT_FILE
 from core.explicit_request import looks_like_explicit_support_request
 from core.llm_client import chat_json as default_chat_json
 from core.llm_client import is_llm_available as default_is_llm_available
-from core.logging import log_warning
-from core.mcp_action import build_tools_catalog
+from core.logging import log_info, log_warning
+from core.mcp_action import MCPAction, build_tools_catalog
 from core.mcp_policy import actions_from_payload
 from core.understanding.models import VALID_ACTION_TYPES, CommentAnalysis
 
@@ -22,6 +22,14 @@ _LLM_UNAVAILABLE_EXEC_MSG = (
     "Support requested execution or output, but LLM triage is unavailable. "
     "Configure LLM or retry when the model is reachable."
 )
+
+_MUST_GATHER_TOOL = "oc_adm_must_gather"
+_MUST_GATHER_MARKERS = ("must-gather", "must gather", "mustgather")
+
+
+def _looks_like_must_gather_request(text: str) -> bool:
+    lowered = normalize_comment_text(text).lower()
+    return any(marker in lowered for marker in _MUST_GATHER_MARKERS)
 
 
 class SemanticUnderstanding:
@@ -112,7 +120,14 @@ class SemanticUnderstanding:
         )
         if not payload:
             return None
-        return _validate_analysis_payload(payload)
+        analysis = _validate_analysis_payload(payload)
+        if analysis is None:
+            return None
+        return _apply_must_gather_catalog_route(
+            comment_text,
+            analysis,
+            self.mcp_tool_names,
+        )
 
 
 def _load_analyze_template() -> str:
@@ -177,4 +192,37 @@ def _validate_analysis_payload(payload: Dict[str, Any]) -> Optional[CommentAnaly
         summary=summary,
         clarifying_questions=questions,
         source="llm",
+    )
+
+
+def _apply_must_gather_catalog_route(
+    comment_text: str,
+    analysis: CommentAnalysis,
+    mcp_tool_names: List[str],
+) -> CommentAnalysis:
+    """When catalog has must-gather and Support asked for it, plan oc_adm_must_gather."""
+    if _MUST_GATHER_TOOL not in set(mcp_tool_names):
+        return analysis
+    if not _looks_like_must_gather_request(comment_text):
+        return analysis
+    if any(action.tool == _MUST_GATHER_TOOL for action in analysis.mcp_calls):
+        return analysis
+    if analysis.action_type == "call_mcp" and analysis.mcp_calls:
+        return analysis
+
+    log_info(
+        "must_gather_catalog_route",
+        from_action_type=analysis.action_type,
+        reason="support_requested_must_gather_with_tool_in_catalog",
+    )
+    summary = (analysis.summary or "").strip() or "Support requested must-gather collection."
+    return CommentAnalysis(
+        actionable=True,
+        action_type="call_mcp",
+        mcp_calls=[MCPAction(tool=_MUST_GATHER_TOOL, arguments={}, label="oc adm must-gather")],
+        intent="diagnostic",
+        requires_execution=True,
+        summary=summary,
+        clarifying_questions=[],
+        source="must_gather_catalog_route",
     )

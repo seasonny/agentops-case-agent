@@ -5,7 +5,7 @@
 | **Purpose** | Workshop / PoC 敘事、縱深防禦模型、擴充接點、PoC 寫死項目清單 |
 | **Audience** | 提案者、workshop 講者、PoC 負責人、接手的 Enterprise 團隊 |
 | **Source of truth** | 本文件是 **Workshop 敘事與 PoC 邊界** 的權威來源 |
-| **Related** | [architecture/00-manifesto.md](../architecture/00-manifesto.md)、[architecture/01-principles.md](../architecture/01-principles.md)、[guides/developer.md](developer.md)、[operations/policy.md](../operations/policy.md) |
+| **Related** | [architecture/00-manifesto.md](../architecture/00-manifesto.md)、[architecture/01-principles.md](../architecture/01-principles.md)、[architecture/07-human-approval-governance.md](../architecture/07-human-approval-governance.md)、[guides/developer.md](developer.md)、[operations/policy.md](../operations/policy.md) |
 
 ---
 
@@ -243,6 +243,158 @@ PoC 捷徑       → 已移除；LLM triage + policy 裁決
 6. **收尾**（1 分鐘）— Reference 交付物 + 你們下一步
 
 不必綁 DNS、dig、must-gather；選 **當下 Case 真實出現的兩種 action_type** 即可。
+
+---
+
+## Approval + Policy 三層 Demo 腳本（治理故事線）
+
+> 目標：同一輪 workshop 展示 **L1 危險指令擋 / L2 policy 放行 / L3 Approval 閘門 + resume**，不依賴 Case 對話「OK」。
+
+### 事前準備
+
+```bash
+# 1. 確認 approval 已開（預設已開；或複製 workshop 範本）
+cp config/agent_config.workshop.example.json config/agent_config.json   # 可選
+cp config/policy.workshop.example.yaml config/policy.yaml             # 可選
+
+# 2. 驗證
+make policy-dump
+make check CASE_ID=04444508
+```
+
+| 設定檔 | 管什麼 | Demo 重點 |
+|--------|--------|-----------|
+| `config/policy.yaml` | **能不能**出現在計畫 / argv 白名單 | shutdown 擋、dig 放行 |
+| `config/agent_config.json` → `approval` | **要不要人核准** | `pods_exec` 需 grant |
+| `trigger.mode: demo` | 一人兩角測試 | 客戶留言含明確請求可觸發 |
+
+### 第一場 — L1：`shutdown` 被 Policy 硬擋（不需 Approval）
+
+**Support 留言範例：**
+
+```text
+請在 worker 節點執行 shutdown -h now 重開。
+```
+
+**預期：**
+
+- `dangerous_command` 或 policy block
+- Agent 回覆說明 **不能執行破壞性 OS 操作**
+- audit：`decision` → `allowed: false`，**不會**有 `approval_requested`
+
+`shutdown` 已在編譯器預設 `dangerous_commands`，**不必**在 `policy.yaml` 再加。若要加組織自訂禁令：
+
+```yaml
+# config/policy.yaml
+overrides:
+  dangerous_commands:
+    - "kubectl delete namespace"
+```
+
+> 注意：`dangerous_commands` 是**子字串比對**。例如 `format` 會誤命中 *infor**mat**ion*——must-gather 類 label 可能誤判；demo 建議用 **dig / pods_exec** 測 Approval。
+
+### 第二場 — L2 + L3：must-gather 放行但需 Approval → grant → resume
+
+**Support 留言範例：**
+
+```text
+請收集 must-gather 並上傳到 Case，我們需要完整叢集診斷資訊。
+```
+
+**設定檢查（皆可透過外部 config，無需改 Python）：**
+
+| 檔案 | 必要設定 |
+|------|----------|
+| `config/policy.yaml` | `profile: diagnostic`；`capabilities.must_gather: true`；`upload_attachments: true`；`upload_path_prefixes` 含 MCP 產物路徑 |
+| `config/agent_config.json` | `approval.enabled: true`；`oc_adm_must_gather` ∈ `required_tools` |
+
+快速套用 workshop 範本：
+
+```bash
+cp config/policy.workshop.example.yaml config/policy.yaml
+cp config/agent_config.workshop.example.json config/agent_config.json
+make policy-dump
+```
+
+**預期流程：**
+
+```
+Understanding → oc_adm_must_gather
+  → Policy 通過（must_gather 能力開啟）
+  → Approval 攔截
+  → approvals.json pending
+  → Case 回覆「待內部核准」（customer_status）
+  → CLI grant → poll resume → 執行 → 上傳附件 → 回報
+```
+
+**Approver：**
+
+```bash
+# 列出待核准
+make pending CASE_ID=04444508
+# 或
+python3 main.py --case-id=04444508 --pending-approvals
+
+# 核准（最新一筆 pending）
+make approve CASE_ID=04444508 BY=sre@corp.com
+# 或
+python3 main.py --case-id=04444508 --approve-latest --approved-by sre@corp.com
+
+# 拒絕（最新一筆 pending — 明確不執行）
+make deny CASE_ID=04444508 BY=sre@corp.com REASON="叢集已下線"
+# 或
+python3 main.py --case-id=04444508 --deny-latest --denied-by sre@corp.com --deny-reason "叢集已下線"
+
+# 核准（指定 fingerprint 或 pending_id）
+python3 main.py --case-id=04444508 --approve d63021e22c850aa3 --approved-by sre@corp.com
+python3 main.py --case-id=04444508 --approve pend-b3a1d105f6cc --approved-by sre@corp.com
+
+# 拒絕（指定）
+python3 main.py --case-id=04444508 --deny pend-b3a1d105f6cc --denied-by sre@corp.com --deny-reason "不需執行"
+
+# Agent 若已在另一終端 poll，grant 後下一輪會自動 resume（不需再開程序）
+python3 main.py --case-id=04444508 --audit-report
+```
+
+> 若曾遇到 must-gather 被誤判為危險指令：舊版 `format` 子字串會命中 *infor**mat**ion*；已改為詞界比對，且 MCP 計畫掃描不再含 LLM label。
+
+### 第二場（備選）— pods_exec dig
+
+**Support 留言範例：**
+
+```text
+請在 openshift-ingress 命名空間的 router pod 內執行 dig registry.redhat.com 做 DNS 檢查。
+```
+
+（流程同上，工具改為 `pods_exec`。）
+
+### 第三場（可選）— 混合留言：`skip_and_continue`
+
+```text
+請執行
+shutdown -h now
+dig registry.redhat.com
+```
+
+`dangerous_handling: skip_and_continue`（預設）→ 跳過 shutdown 行，若 LLM 仍規劃安全 MCP（dig），可走 Approval 路徑。
+
+### 常見卡關
+
+| 現象 | 原因 |
+|------|------|
+| `--pending-approvals` 空 | `approval.enabled` 關著；或從未走到 `requires_approval`；或工具被 L1/L2 先擋 |
+| must-gather 被擋、無 pending | 確認 `must_gather: true`；舊版 `format` 誤判已修；用 `make policy-dump` 確認工具未 block |
+| dry-run `no_new_support_requests` | 最新留言是 Agent 回覆；需新 SE 留言，或開 `trigger.mode: demo` 自測 |
+| grant 後沒執行 | Agent 須在 poll（持續跑的 `main.py` 下一輪會 resume）；`--approve` 本身不執行 MCP |
+| 重複發類似回覆 | 舊版 resume 迴圈；已修去重（同 `correlation_id` 只 resume 一次） |
+
+### 簡報檔（白底、治理主軸）
+
+```bash
+node docs/guides/generate-governance-deck.js
+```
+
+產出：`docs/guides/Case-Agent-Governance-Workshop.pptx`（12 張 · 約 10 分鐘）
 
 ---
 

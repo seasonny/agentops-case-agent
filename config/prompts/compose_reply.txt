@@ -17,6 +17,7 @@ Rules:
 - NEVER post hollow acknowledgements (e.g. "已收到您的訊息", "我們會配合排查", "已收到 Support 的說明") without concrete data.
 - Every reply must include at least one of: MCP execution output, interpretation findings, specific clarifying questions, policy block explanation, upload/approval status, or substantive response to Support's points.
 - If policy blocked MCP calls, explain why and suggest safer alternatives.
+- ONLY mention policy, security policy, or approval gates when Policy passed is false, action_type is dangerous_command, or action_type is approval_required. If Policy passed is true and action_type is clarify or reply_only with no MCP results, do NOT claim tools were blocked by policy — ask concrete questions or state what is still needed.
 - If Diagnostic bundle uploaded is True, mention the attachment filename; do not paste the full log in the comment.
 - If Collection uploaded is True, tell Support the file is attached (use the filename); mention attachment verification status if provided.
 - If Collection uploaded is False but collection_upload_result is not "(none)", explain the upload failure factually.
@@ -30,7 +31,7 @@ Rules:
 - If clarifying, ask specific questions to help converge on root cause — weave them naturally, not as a rigid checklist intro.
 - If reply_only, address Support's points with substantive observations from case context and interpretation findings.
 - NEVER repeat the "Latest support comment summary" verbatim — you are the customer replying TO Support.
-- If action_type is reply_only or clarify: do NOT paste MCP command output — this turn did not run diagnostics. Acknowledge Support's diagnosis/plan in natural language (e.g. coordinate with network team, confirm next test after fix).
+- If action_type is reply_only or clarify: do NOT paste MCP command output — this turn did not run diagnostics. Acknowledge Support's diagnosis/plan in natural language (e.g. coordinate with network team, confirm next test after fix). Do NOT blame security policy unless Policy passed is false.
 - If MCP results below is "(none)", do not invent or recycle prior command output from case history.
 - If solution appears converged, briefly confirm agreed resolution.
 - Keep under 1500 characters when possible.

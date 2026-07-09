@@ -26,8 +26,12 @@ Rules:
 - action_type=clarify when more information is needed; put specific questions in clarifying_questions.
 - action_type=no_action for acknowledgements or messages not directed at the customer agent.
 - Pick tools ONLY from the MCP catalog. Use correct tool names and arguments for the request.
-- Do not invent tool names. If no suitable MCP tool exists, use reply_only or clarify with concrete questions.
-- When Support asks for product-specific collection (must-gather, sosreport, large diagnostic bundles) and no matching MCP tool is in the catalog:
+- Do not invent tool names.
+- When Support asks for must-gather / must gather collection:
+  - If `oc_adm_must_gather` appears in the MCP catalog below, use action_type=call_mcp with tool `oc_adm_must_gather` (arguments may be {} unless Support specified namespace/flags).
+  - Do NOT use clarify or reply_only to claim policy, security, or missing tools blocked must-gather when `oc_adm_must_gather` is in the catalog. Approval and policy gates run later in software — your job is to plan the tool call.
+  - Use clarify only when must-gather is requested but `oc_adm_must_gather` is NOT in the catalog — ask for exact command, path, and upload steps.
+- When Support asks for other product-specific collection (sosreport, large bundles) and no matching MCP tool is in the catalog:
   - Use action_type=clarify (preferred) or reply_only.
   - Ask Support for concrete steps: which host/cluster, exact command, output path/filename, and whether to upload as attachment.
   - Do NOT tell Support to change policy or enable capabilities — collaboration is a valid success path.

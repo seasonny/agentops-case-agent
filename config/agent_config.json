@@ -8,5 +8,20 @@
     "provider": "gemini",
     "model": "gemini-3.1-flash-lite",
     "api_key_env": "GEMINI_API_KEY"
+  },
+  "approval": {
+    "enabled": true,
+    "ttl_hours": 24,
+    "required_tools": [
+      "oc_adm_must_gather",
+      "upload_attachment_rh_portal",
+      "pods_exec"
+    ],
+    "connector_reply": {
+      "mode": "customer_status"
+    }
+  },
+  "enterprise": {
+    "audit_trail": true
   }
 }

@@ -48,16 +48,14 @@ def _format_actions_list(actions: List[MCPAction]) -> str:
     return ", ".join(action.display_label() for action in actions)
 
 
-def _format_approval_pending(pending: Optional[List[Dict[str, Any]]]) -> str:
-    items = pending or []
-    if not items:
-        return "(none)"
-    lines = []
-    for item in items:
-        fp = item.get("fingerprint", "?")
-        label = item.get("label") or item.get("tool", "?")
-        lines.append(f"- [{fp}] {label}")
-    return "\n".join(lines)
+def _format_approval_pending(
+    pending: Optional[List[Dict[str, Any]]],
+    *,
+    config: Optional[Dict[str, Any]] = None,
+) -> str:
+    from core.approval import format_approval_pending_for_compose
+
+    return format_approval_pending_for_compose(pending, config=config)
 
 
 def _join_facts(*parts: str) -> str:
@@ -105,6 +103,7 @@ def _fallback_reply(
     attachment_verify_detail: str = "",
     approval_pending: Optional[List[Dict[str, Any]]] = None,
     collaboration_draft: str = "",
+    config: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     """Minimal factual reply when LLM compose is unavailable or low-value."""
     prefix = get_reply_prefix()
@@ -134,7 +133,13 @@ def _fallback_reply(
     if action_type == "approval_required" and approval_pending:
         from core.approval import format_approval_required_reply
 
-        return _join_facts(prefix, format_approval_required_reply(approval_pending))
+        return _join_facts(
+            prefix,
+            format_approval_required_reply(
+                approval_pending,
+                config=config,
+            ),
+        )
 
     if action_type == "reply_only":
         draft = (collaboration_draft or "").strip()
@@ -366,6 +371,7 @@ class ReplyComposer:
             attachment_verify_detail=attachment_verify_detail,
             approval_pending=approval_pending or [],
             collaboration_draft=collaboration_draft,
+            config=self.config,
         )
 
         mcp_results_for_prompt = _format_mcp_block(mcp_actions, effective_results) or "(none)"
@@ -402,7 +408,7 @@ class ReplyComposer:
             collection_upload_result=collection_upload_result or "(none)",
             attachment_verified=str(attachment_verified),
             attachment_verify_detail=attachment_verify_detail or "(none)",
-            approval_pending=_format_approval_pending(approval_pending),
+            approval_pending=_format_approval_pending(approval_pending, config=self.config),
             interpretation_findings=truncate_for_prompt(
                 interpretation_findings or "(none)", max_chars=4000
             ),

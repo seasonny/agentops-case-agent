@@ -150,7 +150,7 @@
 | **Definition** | 將控制權移交給人類的機制。僅在政策無法判定、風險超標、信心不足、或業務明確要求核准時觸發。 |
 | **Why it exists** | Human by Exception。自動化是預設；人工介入是例外，用於處理邊界情況與高風險決策。 |
 | **Owned by** | Decision Engine（判定是否需要）；Response（通知人類）；Workflow Engine（暫停並等待恢復） |
-| **Related concepts** | Decision、Risk、Confidence、Policy、Workflow |
+| **Related concepts** | Decision、Risk、Confidence、Policy、Workflow、[07-human-approval-governance.md](07-human-approval-governance.md) |
 
 ---
 

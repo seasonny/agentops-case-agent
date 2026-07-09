@@ -132,12 +132,16 @@ def default_config() -> Dict[str, Any]:
             ],
         },
         "approval": {
-            "enabled": False,
+            "enabled": True,
+            "ttl_hours": 24,
             "required_tools": [
                 "oc_adm_must_gather",
                 "pods_exec",
                 "upload_attachment_rh_portal",
             ],
+            "connector_reply": {
+                "mode": "customer_status",
+            },
         },
         "case_context": {
             "track_diagnostics": True,

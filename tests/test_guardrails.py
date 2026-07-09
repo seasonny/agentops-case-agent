@@ -4,7 +4,7 @@ from unittest import mock
 import os
 
 from core.agent_settings import get_loop_guard_seconds, get_reply_prefix, init_agent_settings
-from core.comment_analyzer import CommentAnalyzer
+from core.decision import DecisionContext, DecisionEngine
 from core.config import load_config
 from core.mcp_action import MCPAction
 from core.mcp_policy import MCPPolicyChecker
@@ -27,14 +27,22 @@ class TestAgentSettings(unittest.TestCase):
 
 
 class TestDangerousPrecheck(unittest.TestCase):
-    def test_blocks_before_llm(self):
+    def test_decision_engine_blocks_reboot(self):
         config = load_config()
         init_agent_settings(config)
-        analyzer = CommentAnalyzer(config, policy_checker=MCPPolicyChecker())
-        result = analyzer.analyze("please run reboot on the node")
-        self.assertEqual(result.action_type, "dangerous_command")
-        self.assertEqual(result.source, "policy")
-        self.assertTrue(result.is_processable())
+        engine = DecisionEngine(MCPPolicyChecker(), config)
+        result = engine.evaluate(
+            DecisionContext(
+                action_type="call_mcp",
+                actions=[
+                    MCPAction(tool="exec_shell", arguments={"argv": ["reboot"]}, label="reboot"),
+                ],
+                latest_msg="please run reboot on the node",
+                case_id="12345",
+            )
+        )
+        self.assertFalse(result.allowed)
+        self.assertEqual(result.action_type_override, "dangerous_command")
 
 
 class TestMCPPolicy(unittest.TestCase):

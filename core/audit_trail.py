@@ -148,6 +148,119 @@ class AuditTrail:
             action_type=action_type,
         )
 
+    def record_approval_requested(
+        self,
+        *,
+        comment_id: Optional[int],
+        pending_item: Dict[str, Any],
+        dry_run: bool = False,
+    ) -> None:
+        self.record(
+            "approval_requested",
+            comment_id=comment_id,
+            dry_run=dry_run,
+            version="1",
+            correlation_id=pending_item.get("correlation_id"),
+            pending_id=pending_item.get("pending_id"),
+            fingerprint=pending_item.get("fingerprint"),
+            tool=pending_item.get("tool"),
+            requested_at=pending_item.get("requested_at"),
+            expires_at=pending_item.get("expires_at"),
+        )
+
+    def record_approval_granted(
+        self,
+        *,
+        approved_item: Dict[str, Any],
+        approved_by: str = "",
+        approved_via: str = "",
+    ) -> None:
+        self.record(
+            "approval_granted",
+            comment_id=approved_item.get("comment_id"),
+            correlation_id=approved_item.get("correlation_id"),
+            pending_id=approved_item.get("pending_id"),
+            fingerprint=approved_item.get("fingerprint"),
+            approved_by=approved_by or approved_item.get("approved_by"),
+            approved_via=approved_via or approved_item.get("approved_via"),
+        )
+
+    def record_approval_denied(
+        self,
+        *,
+        denied_item: Dict[str, Any],
+        denied_by: str = "",
+        denied_via: str = "",
+        reason: str = "",
+    ) -> None:
+        self.record(
+            "approval_denied",
+            comment_id=denied_item.get("comment_id"),
+            correlation_id=denied_item.get("correlation_id"),
+            pending_id=denied_item.get("pending_id"),
+            fingerprint=denied_item.get("fingerprint"),
+            tool=denied_item.get("tool"),
+            denied_by=denied_by or denied_item.get("denied_by"),
+            denied_via=denied_via or denied_item.get("denied_via"),
+            deny_reason=reason or denied_item.get("deny_reason"),
+        )
+
+    def record_approval_expired(
+        self,
+        *,
+        expired_item: Dict[str, Any],
+    ) -> None:
+        self.record(
+            "approval_expired",
+            comment_id=expired_item.get("comment_id"),
+            correlation_id=expired_item.get("correlation_id"),
+            pending_id=expired_item.get("pending_id"),
+            fingerprint=expired_item.get("fingerprint"),
+            expired_at=expired_item.get("expired_at"),
+        )
+
+    def record_workflow_resumed(
+        self,
+        *,
+        comment_id: Optional[int],
+        pending_id: str,
+        correlation_id: str = "",
+        dry_run: bool = False,
+    ) -> None:
+        self.record(
+            "workflow_resumed",
+            comment_id=comment_id,
+            dry_run=dry_run,
+            pending_id=pending_id,
+            correlation_id=correlation_id or None,
+        )
+
+    def record_mcp_executed(
+        self,
+        action: Any,
+        *,
+        comment_id: Optional[int],
+        provider: str,
+        actual_tool: str,
+        result_preview: str,
+        dry_run: bool = False,
+        pending_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+    ) -> None:
+        self.record(
+            "mcp_executed",
+            comment_id=comment_id,
+            dry_run=dry_run,
+            tool=action.tool,
+            actual_tool=actual_tool,
+            provider=provider,
+            arguments=action.arguments,
+            label=action.label,
+            result_preview=(result_preview or "")[:500],
+            pending_id=pending_id,
+            correlation_id=correlation_id,
+        )
+
 
 def load_audit_records(case_id: str, *, limit: int = 200) -> List[Dict[str, Any]]:
     path = audit_path(case_id)

@@ -172,7 +172,7 @@ main.py 啟動 poll loop、組裝 runtime
 
 | 模組 | Purpose | Responsibility | Main dependencies |
 |------|---------|----------------|-----------------|
-| `understanding/service.py` | Understanding 單一入口 | `UnderstandingService.analyze()` — 危險指令 precheck、LLM triage 編排 | `semantic`、`mcp_policy` |
+| `understanding/service.py` | Understanding 單一入口 | `UnderstandingService.analyze()` — LLM triage 編排（不裁決 policy） | `semantic` |
 | `understanding/semantic.py` | 語意理解 | LLM triage；無 LLM 時最小 fallback（非確定性路由） | `llm_client` |
 | `explicit_request.py` | Demo 觸發 heuristic | `looks_like_explicit_support_request` — 僅 demo 觸發 / LLM 不可用判斷；**非 MCP 路由** | — |
 | `understanding/models.py` | 理解資料模型 | `CommentAnalysis`、`VALID_ACTION_TYPES` | `mcp_action` |
@@ -189,7 +189,7 @@ main.py 啟動 poll loop、組裝 runtime
 
 **Future evolution：** `comment_analyzer` facade 可在測試遷移後移除。
 
-> **職責備註（2026-07-08）：** Triage 以 **LLM + MCP catalog** 為主；確定性 shell/cluster/clarify 路由已移除。政策 precheck 在 `UnderstandingService`；執行許可由 Decision Engine 負責。
+> **職責備註（2026-07-09）：** Understanding 只產出建議；Triage 以 LLM + MCP catalog 為主。所有 allow/deny 裁決在 `DecisionEngine.evaluate()`。
 
 ---
 
@@ -199,17 +199,17 @@ main.py 啟動 poll loop、組裝 runtime
 
 | 模組 | Purpose | Responsibility | Main dependencies |
 |------|---------|----------------|-----------------|
-| `decision/engine.py` | Decision Engine 單一入口 | `evaluate_policy()` / `evaluate_approval()` → `DecisionResult` | `mcp_policy`、`approval` |
+| `decision/engine.py` | Decision Engine 單一入口 | `evaluate()` → `DecisionResult`（dangerous split + policy + approval） | `mcp_policy`、`approval`、`dangerous_command_split` |
 | `decision/models.py` | 決策資料模型 | `DecisionContext`、`DecisionResult` | `mcp_action` |
 | `policy_compiler.py` | 政策編譯 | 將 `config/policy.yaml` + profiles 編譯為執行時規則 | `config/` 政策檔 |
 | `mcp_policy.py` | 執行時政策檢查 | 檢查 MCP 工具、argv、危險指令是否允許（由 DecisionEngine 委派） | `policy_compiler` |
 | `approval.py` | 人工核准 | Human-in-the-loop：高風險動作需核准後才執行（由 DecisionEngine 委派） | `enterprise`、`mcp_action` |
-| `dangerous_command_split.py` | 危險指令分割 | 將留言中的安全與危險指令分離（Understanding 前置） | — |
+| `dangerous_command_split.py` | 危險指令分割 | 將留言中的安全與危險指令分離（Decision Engine 使用） | — |
 | `blocked_command_explain.py` | 阻擋說明 | 產生人類可讀的阻擋原因 | — |
 
 **Key files：** `decision/engine.py`、`policy_compiler.py`、`mcp_policy.py`、`approval.py`
 
-**Runtime 呼叫：** `workflow/graph.py` `policy` 節點 → `DecisionEngine.evaluate_policy()`；`execute` 節點核准閘門 → `DecisionEngine.evaluate_approval()`。
+**Runtime 呼叫：** `workflow/graph.py` `policy` 節點 → `DecisionEngine.evaluate()`（audit phase=`decision`）；`execute` 僅在 `policy_passed` 時跑 MCP。
 
 **Future evolution：** `record_policy` 審計可逐步遷移至 `record_decision`；collection / compose 路徑中零散的 `deps.policy` 呼叫可選擇性收斂。
 

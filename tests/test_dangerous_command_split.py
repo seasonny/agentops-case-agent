@@ -1,13 +1,10 @@
-import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 from core.comment_analyzer import CommentAnalyzer
 from core.config import load_config
 from core.dangerous_command_split import extract_request_lines, split_comment_requests
 from core.mcp_policy import MCPPolicyChecker
-from core.policy_compiler import compile_policy
 
 
 MIXED_COMMENT = """請執行
@@ -60,7 +57,7 @@ class DangerousCommandSplitTests(unittest.TestCase):
 class MixedDangerousAnalyzerTests(unittest.TestCase):
     @mock.patch("core.comment_analyzer.is_llm_available", return_value=True)
     @mock.patch("core.comment_analyzer.chat_json")
-    def test_skip_and_continue_allows_safe_mcp_calls(self, mock_chat_json, _mock_llm):
+    def test_understanding_keeps_full_mcp_plan(self, mock_chat_json, _mock_llm):
         mock_chat_json.return_value = {
             "actionable": True,
             "action_type": "call_mcp",
@@ -84,38 +81,9 @@ class MixedDangerousAnalyzerTests(unittest.TestCase):
         analyzer = CommentAnalyzer(config, policy_checker=MCPPolicyChecker())
         result = analyzer.analyze(MIXED_COMMENT)
         self.assertEqual(result.action_type, "call_mcp")
-        self.assertEqual(result.blocked_commands, ["reboot"])
+        self.assertEqual(result.blocked_commands, [])
         self.assertEqual(len(result.mcp_calls), 2)
         self.assertNotIn("reboot", str(result.mcp_calls))
-
-    @mock.patch("core.comment_analyzer.is_llm_available", return_value=True)
-    @mock.patch("core.comment_analyzer.chat_json")
-    def test_reject_all_still_blocks_entire_comment(self, mock_chat_json, _mock_llm):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            profiles = root / "profiles"
-            profiles.mkdir()
-            for name in ("diagnostic", "enterprise", "minimal"):
-                src = Path(__file__).resolve().parents[1] / f"config/policy_profiles/{name}.yaml"
-                (profiles / f"{name}.yaml").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-            policy = root / "policy.yaml"
-            policy.write_text(
-                "profile: diagnostic\ndangerous_handling: reject_all\n",
-                encoding="utf-8",
-            )
-            cap_map = Path(__file__).resolve().parents[1] / "config/policy_capability_map.yaml"
-            compiled = compile_policy(
-                policy_path=policy,
-                capability_map_path=cap_map,
-                profiles_dir=profiles,
-            )
-            checker = MCPPolicyChecker(compiled=compiled)
-        config = load_config()
-        analyzer = CommentAnalyzer(config, policy_checker=checker)
-        result = analyzer.analyze(MIXED_COMMENT)
-        self.assertEqual(result.action_type, "dangerous_command")
-        self.assertIn("reboot", result.blocked_commands)
-        mock_chat_json.assert_not_called()
 
 
 if __name__ == "__main__":

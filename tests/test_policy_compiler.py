@@ -1,10 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from core.mcp_action import MCPAction
 from core.mcp_policy import MCPPolicyChecker
-from core.policy_compiler import PolicyConfigError, compile_policy, load_compiled_policy
+from core.policy_compiler import PolicyConfigError, compile_policy, load_compiled_policy, policy_to_dict
 
 
 class PolicyCompilerTests(unittest.TestCase):
@@ -16,6 +17,16 @@ class PolicyCompilerTests(unittest.TestCase):
         self.assertTrue(compiled.capabilities["must_gather"])
         self.assertNotIn("resources_list", compiled.blocked_tools)
         self.assertNotIn("oc_adm_must_gather", compiled.blocked_tools)
+        self.assertIn("pods_delete", compiled.builtin_blocked_tools)
+
+    def test_policy_dump_block_sources(self):
+        compiled = compile_policy()
+        payload = policy_to_dict(compiled)
+        sources = payload.get("block_sources", {})
+        self.assertIn("builtin_always_blocked", sources)
+        self.assertIn("pods_delete", sources["builtin_always_blocked"])
+        self.assertIn("dangerous_command_sources", payload)
+        self.assertIn("builtin_default", payload["dangerous_command_sources"])
 
     def test_diagnostic_allows_must_gather_when_enabled(self):
         compiled = compile_policy()
@@ -95,6 +106,83 @@ class PolicyCompilerTests(unittest.TestCase):
             missing = Path(tmp) / "policy.yaml"
             with self.assertRaises(PolicyConfigError):
                 load_compiled_policy(policy_path=missing)
+
+    def test_replace_dangerous_commands_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            for name in ("diagnostic", "enterprise", "minimal"):
+                src = Path(__file__).resolve().parents[1] / f"config/policy_profiles/{name}.yaml"
+                (profiles / f"{name}.yaml").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+            policy = root / "policy.yaml"
+            policy.write_text(
+                "profile: diagnostic\n"
+                "overrides:\n"
+                "  replace_dangerous_commands: true\n"
+                "  dangerous_commands: [shutdown, reboot]\n",
+                encoding="utf-8",
+            )
+            cap_map = Path(__file__).resolve().parents[1] / "config/policy_capability_map.yaml"
+            compiled = compile_policy(
+                policy_path=policy,
+                capability_map_path=cap_map,
+                profiles_dir=profiles,
+            )
+            self.assertEqual(compiled.dangerous_commands, ["shutdown", "reboot"])
+            checker = MCPPolicyChecker(compiled=compiled)
+            bad, _ = checker.is_dangerous_command("rm -rf /")
+            self.assertFalse(bad)
+
+    def test_format_does_not_match_information_in_label(self):
+        checker = MCPPolicyChecker()
+        label = (
+            "Run must-gather to collect cluster diagnostic information "
+            "as requested by Support."
+        )
+        bad, matched = checker.is_dangerous_command(label)
+        self.assertFalse(bad, matched)
+
+    def test_shutdown_still_matches_as_word(self):
+        checker = MCPPolicyChecker()
+        bad, matched = checker.is_dangerous_command("please shutdown -h now")
+        self.assertTrue(bad)
+        self.assertEqual(matched, "shutdown")
+
+    def test_must_gather_action_passes_policy_gate(self):
+        from core.decision import DecisionContext, DecisionEngine
+
+        checker = MCPPolicyChecker()
+        config = {
+            "approval": {
+                "enabled": True,
+                "required_tools": ["oc_adm_must_gather"],
+            },
+        }
+        engine = DecisionEngine(checker, config)
+        action = MCPAction(
+            tool="oc_adm_must_gather",
+            arguments={},
+            label=(
+                "Run must-gather to collect cluster diagnostic information "
+                "as requested by Support."
+            ),
+        )
+        with mock.patch(
+            "core.decision.engine.register_pending_approvals",
+            return_value=[{"fingerprint": "abc123", "tool": "oc_adm_must_gather"}],
+        ):
+            result = engine.evaluate(
+                DecisionContext(
+                    action_type="call_mcp",
+                    actions=[action],
+                    latest_msg="請收集 must-gather",
+                    case_id="04444508",
+                    comment_id=1,
+                )
+            )
+        self.assertTrue(result.requires_approval)
+        self.assertFalse(result.dangerous_command_blocked)
 
 
 if __name__ == "__main__":

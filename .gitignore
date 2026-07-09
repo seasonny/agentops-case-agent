@@ -1,3 +1,6 @@
+skills/pptx/
+node_modules/
+must-gather.local.*/
 agent_memory.json
 .env
 .env.*
@@ -13,3 +16,4 @@ venv/
 *.log
 diag-output/
 reports/
+*.pptx

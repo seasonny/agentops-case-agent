@@ -8,7 +8,7 @@ from core.case_convergence import CaseConvergenceAssessor
 from core.collaboration_reasoner import CollaborationReasoner
 from core.understanding import UnderstandingService
 from core.understanding.models import CommentAnalysis
-from core.decision import DecisionEngine
+from core.decision import DecisionContext, DecisionEngine
 from core.audit_trail import AuditTrail
 from core.agent_settings import get_reply_prefix
 from domain.case import CaseDomainHooks
@@ -82,6 +82,9 @@ class AgentState(TypedDict, total=False):
     attachment_verify_detail: str
     approval_required: bool
     approval_pending: List[Dict[str, Any]]
+    workflow_resume: bool
+    pending_id: str
+    correlation_id: str
     investigate_step: int
     needs_more_evidence: bool
     follow_up_mcp_actions: List[Dict[str, Any]]
@@ -227,23 +230,39 @@ def build_workflow(deps: WorkflowDeps):
 
     def policy_node(state: AgentState) -> Dict[str, Any]:
         actions = _current_batch_actions(state)
-        result = deps.decision_engine.evaluate_policy(
-            action_type=state.get("action_type", "no_action"),
-            actions=actions,
-            latest_msg=state.get("latest_msg", ""),
-            blocked_commands=list(state.get("blocked_commands") or []),
-            comment_id=state.get("comment_id"),
-            dry_run=bool(state.get("dry_run")),
+        result = deps.decision_engine.evaluate(
+            DecisionContext(
+                action_type=state.get("action_type", "no_action"),
+                actions=actions,
+                latest_msg=state.get("latest_msg", ""),
+                blocked_commands=list(state.get("blocked_commands") or []),
+                case_id=str(state.get("case_id", "")).strip(),
+                comment_id=state.get("comment_id"),
+                dry_run=bool(state.get("dry_run")),
+                resume_pending_id=(
+                    str(state.get("pending_id", "")).strip()
+                    if state.get("workflow_resume")
+                    else None
+                ),
+            )
         )
         if deps.audit:
             deps.audit.record_decision(
                 comment_id=state.get("comment_id"),
-                phase="policy",
+                phase="decision",
                 result=result,
                 dry_run=bool(state.get("dry_run")),
                 tools=[action.tool for action in actions],
             )
-        return result.to_policy_state()
+            if result.requires_approval:
+                for item in result.approval_pending:
+                    if isinstance(item, dict):
+                        deps.audit.record_approval_requested(
+                            comment_id=state.get("comment_id"),
+                            pending_item=item,
+                            dry_run=bool(state.get("dry_run")),
+                        )
+        return result.to_workflow_state()
 
     def execute_node(state: AgentState) -> Dict[str, Any]:
         action_type = state.get("action_type", "no_action")
@@ -256,23 +275,6 @@ def build_workflow(deps: WorkflowDeps):
 
         if not state.get("policy_passed", False):
             return {"execution_results": [], "status": "POLLING"}
-
-        case_id = str(state.get("case_id", "")).strip()
-        approval = deps.decision_engine.evaluate_approval(
-            case_id=case_id,
-            actions=actions,
-            comment_id=state.get("comment_id"),
-        )
-        if not approval.allowed:
-            if deps.audit:
-                deps.audit.record_decision(
-                    comment_id=state.get("comment_id"),
-                    phase="approval",
-                    result=approval,
-                    dry_run=bool(state.get("dry_run")),
-                    tools=[action.tool for action in actions],
-                )
-            return approval.to_approval_state()
 
         if dry_run:
             log_info(

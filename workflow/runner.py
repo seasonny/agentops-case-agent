@@ -17,6 +17,12 @@ from typing import Any, Dict, List, Set
 
 from connectors import CasePortalConnector, Connector
 from core.agent_settings import get_loop_guard_seconds
+from core.approval import (
+    expire_stale_pending,
+    list_resumable_approved,
+    mark_pending_resumed,
+    persist_workflow_context_from_memory,
+)
 from core.audit_trail import AuditTrail
 from core.case_context import build_case_history
 from core.case_context_memory import augment_case_history, record_diagnostics, record_hypothesis
@@ -42,6 +48,7 @@ from core.memory import (
     record_agent_reply,
     save_agent_memory,
 )
+from core.mcp_action import MCPAction
 from core.outage import notify_webhook, poll_interval_seconds
 from core.participants import ParticipantResolver
 from core.run_report import format_run_summary_human, persist_run_report
@@ -98,6 +105,333 @@ def should_skip_looping_request(memory: Dict[str, Any], analysis) -> bool:
         return False
     # Prevent rapid no-value loops in one-person demo mode.
     return seconds_since_last_reply(memory) < get_loop_guard_seconds()
+
+
+def _find_comment_by_id(
+    comments: List[Dict[str, Any]],
+    comment_id: Optional[int],
+) -> Optional[Dict[str, Any]]:
+    if comment_id is None:
+        return None
+    for comment in comments:
+        if comment.get("id") == comment_id:
+            return comment
+    return None
+
+
+def _build_resume_invoke_state(
+    memory: Dict[str, Any],
+    *,
+    approved_item: Dict[str, Any],
+    case_history: str,
+    dry_run: bool,
+) -> Dict[str, Any]:
+    ctx = dict(approved_item.get("workflow_context") or {})
+    mcp_actions = list(ctx.get("mcp_actions") or [])
+    return {
+        "case_id": memory["case_id"],
+        "comment_id": ctx.get("comment_id"),
+        "latest_msg": ctx.get("latest_msg", ""),
+        "case_history": case_history,
+        "dry_run": dry_run,
+        "analysis_prefilled": True,
+        "action_type": "call_mcp",
+        "mcp_actions": mcp_actions,
+        "request_summary": ctx.get("request_summary", ""),
+        "blocked_commands": list(ctx.get("blocked_commands") or []),
+        "intent": ctx.get("intent", ""),
+        "analysis_source": "workflow_resume",
+        "proposed_commands": list(ctx.get("proposed_commands") or []),
+        "clarifying_questions": list(ctx.get("clarifying_questions") or []),
+        "workflow_resume": True,
+        "pending_id": approved_item.get("pending_id", ""),
+        "correlation_id": approved_item.get("correlation_id", ""),
+        "status": TURN_PROCESSING,
+        "turn_state": TURN_PROCESSING,
+        "turn_owner": TURN_OWNER_CUSTOMER,
+    }
+
+
+def _finalize_workflow_run(
+    memory: Dict[str, Any],
+    config: Dict[str, Any],
+    *,
+    comment: Dict[str, Any],
+    analysis,
+    output: Dict[str, Any],
+    dry_run: bool,
+    processed_ids: Set[int],
+    processed_keys: Set[str],
+    audit: AuditTrail,
+    run_started_at,
+) -> None:
+    memory.update(output)
+    memory["diagnostics_history"] = memory.get("diagnostics_history", [])
+    memory["last_blocker_signature"] = extract_blocker_signature(
+        output.get("execution_results", [])
+    )
+
+    if (
+        not output.get("approval_required")
+        and output.get("action_type") == "call_mcp"
+        and output.get("execution_results")
+    ):
+        actions = [
+            MCPAction(
+                tool=str(item.get("tool", "")),
+                arguments=dict(item.get("arguments", {})),
+                label=str(item.get("label", "")),
+            )
+            for item in (output.get("all_mcp_actions") or output.get("mcp_actions") or [])
+            if isinstance(item, dict)
+        ]
+        record_diagnostics(
+            memory,
+            actions,
+            comment_id=comment["id"],
+            config=config,
+            execution_results=output.get("execution_results") or [],
+        )
+
+    if output.get("action_type") in ("reply_only", "clarify"):
+        record_hypothesis(
+            memory,
+            comment_id=comment["id"],
+            request_summary=output.get("request_summary") or getattr(analysis, "summary", ""),
+            diagnosis_understanding=output.get("diagnosis_understanding", ""),
+            customer_actions=output.get("customer_actions"),
+            confirmation_questions=output.get("confirmation_questions"),
+            verification_plan=output.get("verification_plan", ""),
+            convergence_signal=output.get("convergence_signal", "none"),
+            customer_voice=output.get("collaboration_customer_voice", ""),
+        )
+
+    run_record = persist_run_report(
+        case_id=memory["case_id"],
+        comment=comment,
+        analysis=analysis,
+        output=memory,
+        dry_run=dry_run,
+        started_at=run_started_at,
+    )
+    log_info(
+        "run_report_saved",
+        comment_id=comment["id"],
+        action_type=run_record.get("action_type"),
+        policy_passed=run_record.get("policy_passed"),
+        reply_posted=run_record.get("reply_posted"),
+        dry_run=dry_run,
+        workflow_resume=bool(output.get("workflow_resume")),
+    )
+    if dry_run:
+        print(format_run_summary_human(run_record))
+
+    reply_posted = output.get("reply_posted", False)
+    commands = output.get("proposed_commands", [])
+    approval_required = bool(output.get("approval_required"))
+
+    if approval_required:
+        notify_webhook(
+            config,
+            "approval_required",
+            case_id=memory["case_id"],
+            message="MCP action awaiting human approval",
+            fields={"comment_id": comment["id"]},
+        )
+        audit.record(
+            "approval_waiting",
+            comment_id=comment["id"],
+            dry_run=dry_run,
+            pending=output.get("approval_pending", []),
+        )
+        persist_workflow_context_from_memory(
+            memory["case_id"],
+            memory=memory,
+            comment=comment,
+            pending=output.get("approval_pending", []),
+        )
+    elif output.get("action_type") == "clarify":
+        notify_webhook(
+            config,
+            "clarify",
+            case_id=memory["case_id"],
+            message="Agent posted clarify questions",
+            fields={"comment_id": comment["id"]},
+        )
+
+    if dry_run:
+        log_info(
+            "dry_run_complete",
+            comment_id=comment["id"],
+            action_type=getattr(analysis, "action_type", output.get("action_type")),
+            commands=commands,
+        )
+        mark_comment_handled(
+            memory, comment, processed_ids, processed_keys, as_support=False
+        )
+    elif approval_required:
+        if reply_posted:
+            audit.record_reply(
+                comment_id=comment["id"],
+                posted=True,
+                action_type="approval_required",
+                dry_run=False,
+            )
+        log_warning(
+            "approval_required_keep_pending",
+            comment_id=comment["id"],
+        )
+    elif reply_posted:
+        mark_comment_handled(
+            memory, comment, processed_ids, processed_keys, as_support=True
+        )
+        record_agent_reply(memory, commands_hash(commands) if commands else None)
+        audit.record_reply(
+            comment_id=comment["id"],
+            posted=True,
+            action_type=output.get("action_type", getattr(analysis, "action_type", "")),
+            dry_run=False,
+        )
+        notify_webhook(
+            config,
+            "reply_posted",
+            case_id=memory["case_id"],
+            message="Agent replied to Support",
+            fields={"comment_id": comment["id"]},
+        )
+    else:
+        if not output.get("policy_passed", True):
+            notify_webhook(
+                config,
+                "policy_blocked",
+                case_id=memory["case_id"],
+                message=output.get("policy_reason", "policy blocked"),
+                fields={"comment_id": comment["id"]},
+            )
+        log_warning(
+            "reply_failed_keep_pending",
+            comment_id=comment["id"],
+        )
+
+
+def try_resume_approved_workflows(
+    memory: Dict[str, Any],
+    config: Dict[str, Any],
+    comments: List[Dict[str, Any]],
+    app,
+    deps: WorkflowDeps,
+    understanding: UnderstandingService,
+    *,
+    dry_run: bool,
+    processed_ids: Set[int],
+    processed_keys: Set[str],
+    case_history: str,
+    audit: AuditTrail,
+) -> bool:
+    """Resume the oldest granted approval workflow without a new trigger."""
+    for expired in expire_stale_pending(memory["case_id"], config):
+        audit.record_approval_expired(expired_item=expired)
+
+    resumable = list_resumable_approved(memory["case_id"])
+    if not resumable:
+        return False
+
+    approved_item = resumable[0]
+    ctx = dict(approved_item.get("workflow_context") or {})
+    comment_id = ctx.get("comment_id")
+    comment = _find_comment_by_id(comments, comment_id)
+    if comment is None:
+        comment = {
+            "id": comment_id or 0,
+            "content": ctx.get("latest_msg", ""),
+            "author": "workflow_resume",
+            "timestamp": "",
+            "role": "support",
+        }
+
+    resume_state = _build_resume_invoke_state(
+        memory,
+        approved_item=approved_item,
+        case_history=case_history,
+        dry_run=dry_run,
+    )
+    mcp_action_objs = [
+        MCPAction(
+            tool=str(item.get("tool", "")),
+            arguments=dict(item.get("arguments", {})),
+            label=str(item.get("label", "")),
+        )
+        for item in resume_state.get("mcp_actions", [])
+        if isinstance(item, dict) and item.get("tool")
+    ]
+    reset_turn_execution_state(
+        memory,
+        action_type="call_mcp",
+        mcp_actions=mcp_action_objs,
+    )
+    memory.update(resume_state)
+
+    pending_id = str(approved_item.get("pending_id", ""))
+    correlation_id = str(approved_item.get("correlation_id", ""))
+    audit.record_workflow_resumed(
+        comment_id=comment_id,
+        pending_id=pending_id,
+        correlation_id=correlation_id,
+        dry_run=dry_run,
+    )
+
+    log_info(
+        "workflow_resume_start",
+        pending_id=pending_id,
+        comment_id=comment_id,
+        correlation_id=correlation_id,
+        tools=[a.tool for a in mcp_action_objs],
+        dry_run=dry_run,
+    )
+
+    run_started_at = datetime.now(timezone.utc)
+    deps.executor.comment_id = comment_id
+    deps.executor.dry_run = dry_run
+    deps.executor.audit = audit
+    deps.executor.resume_pending_id = pending_id or None
+    deps.executor.resume_correlation_id = correlation_id or None
+
+    output = app.invoke(memory)
+    output["workflow_resume"] = True
+    deps.executor.resume_pending_id = None
+    deps.executor.resume_correlation_id = None
+
+    analysis = type(
+        "ResumeAnalysis",
+        (),
+        {
+            "action_type": "call_mcp",
+            "summary": resume_state.get("request_summary", ""),
+            "commands": resume_state.get("proposed_commands", []),
+            "mcp_calls": mcp_action_objs,
+            "source": "workflow_resume",
+        },
+    )()
+
+    _finalize_workflow_run(
+        memory,
+        config,
+        comment=comment,
+        analysis=analysis,
+        output=output,
+        dry_run=dry_run,
+        processed_ids=processed_ids,
+        processed_keys=processed_keys,
+        audit=audit,
+        run_started_at=run_started_at,
+    )
+
+    if not output.get("approval_required") and (
+        dry_run or output.get("reply_posted") or output.get("execution_results")
+    ):
+        mark_pending_resumed(memory["case_id"], pending_id)
+
+    return True
 
 
 def skip_and_mark(
@@ -175,6 +509,26 @@ def process_poll_cycle(
 
     case_history = augment_case_history(build_case_history(comments), memory)
     sorted_comments = sort_comments_chronologically(comments)
+
+    if try_resume_approved_workflows(
+        memory,
+        config,
+        sorted_comments,
+        app,
+        deps,
+        understanding,
+        dry_run=dry_run,
+        processed_ids=processed_ids,
+        processed_keys=processed_keys,
+        case_history=case_history,
+        audit=audit,
+    ):
+        memory["processed_comment_ids"] = sorted(processed_ids)
+        memory["processed_handled_keys"] = sorted(processed_keys)
+        memory["turn_state"] = memory.get("turn_state", TURN_WAITING)
+        save_agent_memory(memory)
+        time.sleep(interval)
+        return
 
     for comment in sorted_comments:
         if is_comment_handled(comment, processed_keys):
@@ -321,148 +675,18 @@ def process_poll_cycle(
         deps.executor.audit = audit
 
         output = app.invoke(memory)
-        memory.update(output)
-        memory["diagnostics_history"] = memory.get("diagnostics_history", [])
-        memory["last_blocker_signature"] = extract_blocker_signature(
-            output.get("execution_results", [])
-        )
-
-        if (
-            not output.get("approval_required")
-            and output.get("action_type") == "call_mcp"
-            and output.get("execution_results")
-        ):
-            from core.mcp_action import MCPAction as _MCPAction
-
-            actions = [
-                _MCPAction(
-                    tool=str(item.get("tool", "")),
-                    arguments=dict(item.get("arguments", {})),
-                    label=str(item.get("label", "")),
-                )
-                for item in (output.get("all_mcp_actions") or output.get("mcp_actions") or [])
-                if isinstance(item, dict)
-            ]
-            record_diagnostics(
-                memory,
-                actions,
-                comment_id=comment["id"],
-                config=config,
-                execution_results=output.get("execution_results") or [],
-            )
-
-        if output.get("action_type") in ("reply_only", "clarify"):
-            record_hypothesis(
-                memory,
-                comment_id=comment["id"],
-                request_summary=output.get("request_summary") or analysis.summary,
-                diagnosis_understanding=output.get("diagnosis_understanding", ""),
-                customer_actions=output.get("customer_actions"),
-                confirmation_questions=output.get("confirmation_questions"),
-                verification_plan=output.get("verification_plan", ""),
-                convergence_signal=output.get("convergence_signal", "none"),
-                customer_voice=output.get("collaboration_customer_voice", ""),
-            )
-
-        run_record = persist_run_report(
-            case_id=memory["case_id"],
+        _finalize_workflow_run(
+            memory,
+            config,
             comment=comment,
             analysis=analysis,
-            output=memory,
+            output=output,
             dry_run=dry_run,
-            started_at=run_started_at,
+            processed_ids=processed_ids,
+            processed_keys=processed_keys,
+            audit=audit,
+            run_started_at=run_started_at,
         )
-        log_info(
-            "run_report_saved",
-            comment_id=comment["id"],
-            action_type=run_record.get("action_type"),
-            policy_passed=run_record.get("policy_passed"),
-            reply_posted=run_record.get("reply_posted"),
-            dry_run=dry_run,
-        )
-        if dry_run:
-            print(format_run_summary_human(run_record))
-
-        reply_posted = output.get("reply_posted", False)
-        commands = output.get("proposed_commands", [])
-        approval_required = bool(output.get("approval_required"))
-
-        if approval_required:
-            notify_webhook(
-                config,
-                "approval_required",
-                case_id=memory["case_id"],
-                message="MCP action awaiting human approval",
-                fields={"comment_id": comment["id"]},
-            )
-            audit.record(
-                "approval_waiting",
-                comment_id=comment["id"],
-                dry_run=dry_run,
-                pending=output.get("approval_pending", []),
-            )
-        elif output.get("action_type") == "clarify":
-            notify_webhook(
-                config,
-                "clarify",
-                case_id=memory["case_id"],
-                message="Agent posted clarify questions",
-                fields={"comment_id": comment["id"]},
-            )
-
-        if dry_run:
-            log_info(
-                "dry_run_complete",
-                comment_id=comment["id"],
-                action_type=analysis.action_type,
-                commands=commands,
-            )
-            mark_comment_handled(
-                memory, comment, processed_ids, processed_keys, as_support=False
-            )
-        elif approval_required:
-            if reply_posted:
-                audit.record_reply(
-                    comment_id=comment["id"],
-                    posted=True,
-                    action_type="approval_required",
-                    dry_run=False,
-                )
-            log_warning(
-                "approval_required_keep_pending",
-                comment_id=comment["id"],
-            )
-        elif reply_posted:
-            mark_comment_handled(
-                memory, comment, processed_ids, processed_keys, as_support=True
-            )
-            record_agent_reply(memory, commands_hash(commands) if commands else None)
-            audit.record_reply(
-                comment_id=comment["id"],
-                posted=True,
-                action_type=output.get("action_type", analysis.action_type),
-                dry_run=False,
-            )
-            notify_webhook(
-                config,
-                "reply_posted",
-                case_id=memory["case_id"],
-                message="Agent replied to Support",
-                fields={"comment_id": comment["id"]},
-            )
-        else:
-            if not output.get("policy_passed", True):
-                notify_webhook(
-                    config,
-                    "policy_blocked",
-                    case_id=memory["case_id"],
-                    message=output.get("policy_reason", "policy blocked"),
-                    fields={"comment_id": comment["id"]},
-                )
-            log_warning(
-                "reply_failed_keep_pending",
-                comment_id=comment["id"],
-            )
 
     for comment in sorted_comments:
         if is_comment_handled(comment, processed_keys):

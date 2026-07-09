@@ -36,7 +36,7 @@ class WorkflowAnalyzeSkipTests(unittest.TestCase):
         )
         deps.policy.dangerous_handling = "skip_and_continue"
         deps.policy.is_dangerous_command.return_value = (False, "")
-        deps.decision_engine.evaluate_policy.return_value = DecisionResult(
+        deps.decision_engine.evaluate.return_value = DecisionResult(
             allowed=True,
             reason="No MCP actions to run.",
             policy_ref="policy:test",

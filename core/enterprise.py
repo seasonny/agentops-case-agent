@@ -72,6 +72,24 @@ def approval_enabled(config: Dict[str, Any]) -> bool:
     return bool(approval_section(config).get("enabled"))
 
 
+def approval_ttl_hours(config: Dict[str, Any]) -> int:
+    raw = approval_section(config).get("ttl_hours", 24)
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return 24
+
+
+def connector_reply_mode(config: Dict[str, Any]) -> str:
+    connector = approval_section(config).get("connector_reply", {})
+    if not isinstance(connector, dict):
+        return "ops_detail"
+    mode = str(connector.get("mode", "ops_detail")).strip().lower()
+    if mode in ("customer_status", "ops_detail", "silent"):
+        return mode
+    return "ops_detail"
+
+
 def approval_required_tools(config: Dict[str, Any]) -> List[str]:
     tools = approval_section(config).get("required_tools", [])
     if isinstance(tools, list) and tools:

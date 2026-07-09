@@ -57,6 +57,7 @@
 | 改程式、除錯、擴充 | [guides/developer.md](guides/developer.md) |
 | 配置 `policy.yaml` | [operations/policy.md](operations/policy.md) |
 | Production 部署 | [operations/enterprise.md](operations/enterprise.md) |
+| 人工核准 / HITL 治理 | [architecture/07-human-approval-governance.md](architecture/07-human-approval-governance.md) |
 | 新增 MCP provider | [guides/mcp-providers.md](guides/mcp-providers.md) |
 | Case API 契約 | [contracts/case-api.md](contracts/case-api.md) |
 | Exec MCP 契約 | [contracts/exec-mcp.md](contracts/exec-mcp.md) |
@@ -79,6 +80,7 @@
 | [architecture/04-module-map.md](architecture/04-module-map.md) | 程式碼模組擁有什麼？ |
 | [architecture/05-vocabulary.md](architecture/05-vocabulary.md) | 架構術語是什麼意思？ |
 | [architecture/06-architecture-alignment-plan.md](architecture/06-architecture-alignment-plan.md) | 如何漸進對齊架構？ |
+| [architecture/07-human-approval-governance.md](architecture/07-human-approval-governance.md) | 人工核准與 Enterprise 治理？ |
 
 **架構層 SSOT：** [02-reference-architecture.md](architecture/02-reference-architecture.md) + [01-principles.md](architecture/01-principles.md)
 
@@ -101,6 +103,7 @@
 | [operations/constraints.md](operations/constraints.md) | 改碼時哪些紅線不能碰？ |
 | [operations/policy.md](operations/policy.md) | 怎麼配 `policy.yaml`？ |
 | [operations/enterprise.md](operations/enterprise.md) | 怎麼部署 production？ |
+| [architecture/07-human-approval-governance.md](architecture/07-human-approval-governance.md) | 人工核准 / HITL 怎麼設計？ |
 
 **政策 SSOT：** [operations/policy.md](operations/policy.md) · **改碼紅線 SSOT：** [operations/constraints.md](operations/constraints.md)
 
@@ -151,6 +154,7 @@
 | AI 工程方法？ | [.ai/engineering-method.md](.ai/engineering-method.md) |
 | 改碼紅線？ | [operations/constraints.md](operations/constraints.md) |
 | 配 policy.yaml？ | [operations/policy.md](operations/policy.md) |
+| 人工核准 / HITL？ | [architecture/07-human-approval-governance.md](architecture/07-human-approval-governance.md) |
 | Workshop / PoC？ | [guides/workshop.md](guides/workshop.md) |
 | 擴充 / 除錯？ | [guides/developer.md](guides/developer.md) |
 | 安裝與執行？ | [../README.md](../README.md) |

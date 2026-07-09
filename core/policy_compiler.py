@@ -54,6 +54,12 @@ class CompiledPolicy:
     dangerous_commands: List[str]
     dangerous_handling: str
     enabled_tool_count: int = 0
+    builtin_blocked_tools: FrozenSet[str] = frozenset()
+    capability_blocked_tools: FrozenSet[str] = frozenset()
+    user_blocked_tools: FrozenSet[str] = frozenset()
+    dangerous_commands_builtin: Optional[List[str]] = None
+    dangerous_commands_user: Optional[List[str]] = None
+    dangerous_commands_replaced: bool = False
 
 
 def _read_yaml(path: Path) -> Dict[str, Any]:
@@ -174,8 +180,13 @@ def compile_policy(
         extra_block = []
 
     always_blocked = set(cap_map["always_blocked_tools"])
+    builtin_blocked = frozenset(always_blocked)
     blocked_tools: Set[str] = set(always_blocked)
+    capability_blocked: Set[str] = set()
     allowed_tools: Optional[Set[str]] = None
+    user_blocked = frozenset(
+        str(t).strip() for t in extra_block if str(t).strip()
+    )
 
     if mode == "allowlist":
         allowed_tools = set()
@@ -184,12 +195,13 @@ def compile_policy(
                 allowed_tools.update(cap_map["tools_by_cap"].get(cap, set()))
         allowed_tools.update(str(t).strip() for t in extra_allow if str(t).strip())
         allowed_tools -= blocked_tools
-        allowed_tools -= {str(t).strip() for t in extra_block if str(t).strip()}
+        allowed_tools -= set(user_blocked)
     else:
         for cap, enabled in capabilities.items():
             if not enabled:
-                blocked_tools.update(cap_map["tools_by_cap"].get(cap, set()))
-        blocked_tools.update(str(t).strip() for t in extra_block if str(t).strip())
+                capability_blocked.update(cap_map["tools_by_cap"].get(cap, set()))
+        blocked_tools.update(capability_blocked)
+        blocked_tools.update(user_blocked)
 
     exec_binaries = list(cap_map["default_exec_binaries"])
     extra_bins = overrides.get("exec_binaries", [])
@@ -209,11 +221,16 @@ def compile_policy(
 
     dangerous = list(DEFAULT_DANGEROUS_COMMANDS)
     extra_dangerous = overrides.get("dangerous_commands", [])
-    if isinstance(extra_dangerous, list):
+    replace_dangerous = bool(overrides.get("replace_dangerous_commands", False))
+    dangerous_user_added: List[str] = []
+    if replace_dangerous and isinstance(extra_dangerous, list):
+        dangerous = [str(item).strip() for item in extra_dangerous if str(item).strip()]
+    elif isinstance(extra_dangerous, list):
         for item in extra_dangerous:
             value = str(item).strip()
             if value and value not in dangerous:
                 dangerous.append(value)
+                dangerous_user_added.append(value)
 
     enabled_tool_count = len(allowed_tools) if allowed_tools is not None else 0
 
@@ -242,6 +259,16 @@ def compile_policy(
         dangerous_commands=dangerous,
         dangerous_handling=dangerous_handling,
         enabled_tool_count=enabled_tool_count,
+        builtin_blocked_tools=builtin_blocked,
+        capability_blocked_tools=frozenset(capability_blocked),
+        user_blocked_tools=user_blocked,
+        dangerous_commands_builtin=(
+            [] if replace_dangerous else list(DEFAULT_DANGEROUS_COMMANDS)
+        ),
+        dangerous_commands_user=(
+            list(dangerous) if replace_dangerous else dangerous_user_added
+        ),
+        dangerous_commands_replaced=replace_dangerous,
     )
 
 
@@ -271,7 +298,22 @@ def format_policy_summary(compiled: CompiledPolicy) -> List[str]:
         lines.append(f"  [{mark}] {label}")
     if compiled.mode == "allowlist":
         lines.append(f"Allowed MCP tools: {compiled.enabled_tool_count}")
-    lines.append(f"Always blocked: {len(compiled.blocked_tools)} tools")
+    lines.append(f"Blocked MCP tools (total): {len(compiled.blocked_tools)}")
+    if compiled.builtin_blocked_tools:
+        lines.append(
+            "  [內建永封] "
+            + ", ".join(sorted(compiled.builtin_blocked_tools))
+        )
+    if compiled.capability_blocked_tools:
+        lines.append(
+            "  [能力關閉] "
+            + ", ".join(sorted(compiled.capability_blocked_tools))
+        )
+    if compiled.user_blocked_tools:
+        lines.append(
+            "  [policy.yaml overrides] "
+            + ", ".join(sorted(compiled.user_blocked_tools))
+        )
     lines.append(
         "Exec binaries: "
         + ", ".join(sorted(compiled.host_exec_allowed_binaries))
@@ -293,16 +335,30 @@ def format_policy_summary(compiled: CompiledPolicy) -> List[str]:
 
 def policy_to_dict(compiled: CompiledPolicy) -> Dict[str, Any]:
     """Serialize compiled policy for --policy-dump."""
+    builtin_dangerous = compiled.dangerous_commands_builtin
+    if builtin_dangerous is None:
+        builtin_dangerous = list(DEFAULT_DANGEROUS_COMMANDS)
+    user_dangerous = compiled.dangerous_commands_user or []
     return {
         "profile": compiled.profile,
         "mode": compiled.mode,
         "description": compiled.description,
         "capabilities": dict(compiled.capabilities),
         "blocked_tools": sorted(compiled.blocked_tools),
+        "block_sources": {
+            "builtin_always_blocked": sorted(compiled.builtin_blocked_tools),
+            "disabled_capabilities": sorted(compiled.capability_blocked_tools),
+            "user_override_block_tools": sorted(compiled.user_blocked_tools),
+        },
         "allowed_tools": sorted(compiled.allowed_tools) if compiled.allowed_tools else None,
         "pods_exec_allowed_binaries": sorted(compiled.pods_exec_allowed_binaries),
         "host_exec_allowed_binaries": sorted(compiled.host_exec_allowed_binaries),
         "upload_allowed_path_prefixes": list(compiled.upload_allowed_prefixes),
         "dangerous_commands": list(compiled.dangerous_commands),
+        "dangerous_command_sources": {
+            "builtin_default": list(builtin_dangerous),
+            "user_added": list(user_dangerous),
+            "replaced_builtin": compiled.dangerous_commands_replaced,
+        },
         "dangerous_handling": compiled.dangerous_handling,
     }

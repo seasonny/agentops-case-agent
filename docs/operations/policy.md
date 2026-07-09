@@ -157,7 +157,12 @@ overrides:
   block_tools: [upload_attachment_rh_portal]
   upload_path_prefixes: ["/tmp/", "./must-gather/"]
   exec_binaries: [dig, ping, curl]
-  dangerous_commands: ["chmod 777"]
+  dangerous_commands: ["chmod 777"]   # 追加到內建清單
+
+# 完全取代內建危險指令清單（少數情境）：
+# overrides:
+#   replace_dangerous_commands: true
+#   dangerous_commands: [shutdown, reboot, "rm -rf"]
 ```
 
 ---

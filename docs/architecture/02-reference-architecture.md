@@ -172,6 +172,8 @@ Escalation should occur only when:
 * Required information is missing.
 * Business approval is explicitly required.
 
+Detailed approval model, audit requirements, and Enterprise integration patterns: [07-human-approval-governance.md](07-human-approval-governance.md).
+
 ---
 
 # Policy Model

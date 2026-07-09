@@ -1,0 +1,34 @@
+# Workshop — must-gather + Approval demo
+#
+# 使用：
+#   cp config/policy.workshop.example.yaml config/policy.yaml
+#   make policy-dump
+#   make check CASE_ID=04444508
+#
+# 與 agent_config 分工：
+#   policy.yaml     → 能不能跑 must-gather（能力 / 危險指令 / 上傳路徑）
+#   agent_config    → 跑之前要不要人核准（approval.required_tools）
+
+profile: diagnostic
+dangerous_handling: skip_and_continue
+
+# 必開：must-gather + 上傳（diagnostic profile 預設已開，這裡寫明方便 workshop）
+capabilities:
+  must_gather: true
+  upload_attachments: true
+
+# must-gather tarball 上傳允許路徑（依 MCP 實際輸出調整）
+overrides:
+  upload_path_prefixes:
+    - "/tmp/"
+    - "./must-gather/"
+    - "/var/tmp/"
+
+# 進階：完全自訂危險指令清單（取代內建預設，一般不必）
+# overrides:
+#   replace_dangerous_commands: true
+#   dangerous_commands:
+#     - shutdown
+#     - reboot
+#     - rm -rf
+#     - mkfs

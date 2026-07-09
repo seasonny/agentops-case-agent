@@ -8,6 +8,7 @@ from core.approval import (
     action_fingerprint,
     approve_fingerprint,
     filter_unapproved_actions,
+    mark_pending_resumed,
     register_pending_approvals,
 )
 from core.audit_trail import AuditTrail, append_audit_record, summarize_audit
@@ -53,15 +54,22 @@ class ApprovalTests(unittest.TestCase):
         self.approval_patch.stop()
         self.tmp.cleanup()
 
-    def test_approve_flow(self):
+    def test_approve_flow_one_shot(self):
         action = MCPAction(tool="pods_exec", arguments={"command": ["dig", "x"]}, label="dig")
         config = {"approval": {"enabled": True, "required_tools": ["pods_exec"]}}
         pending = register_pending_approvals("99", [action], comment_id=1)
         fp = pending[0]["fingerprint"]
         self.assertEqual(fp, action_fingerprint(action))
         self.assertEqual(len(filter_unapproved_actions("99", [action], config)), 1)
-        self.assertTrue(approve_fingerprint("99", fp, approved_by="sre"))
-        self.assertEqual(len(filter_unapproved_actions("99", [action], config)), 0)
+        ok, approved = approve_fingerprint("99", fp, approved_by="sre")
+        self.assertTrue(ok)
+        self.assertIsNotNone(approved)
+        # Grant applies to resume only — same action needs approval again on next request.
+        self.assertEqual(len(filter_unapproved_actions("99", [action], config)), 1)
+        mark_pending_resumed("99", approved["pending_id"])
+        pending2 = register_pending_approvals("99", [action], comment_id=2)
+        self.assertTrue(pending2)
+        self.assertEqual(len(filter_unapproved_actions("99", [action], config)), 1)
 
 
 class SecretsTests(unittest.TestCase):

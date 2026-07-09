@@ -38,10 +38,11 @@ def _has_legacy_handled_keys(keys: list) -> bool:
     """Return True if any key uses the old unstable MCP-ID-based format.
 
     Old format: "<mcp_id>:<hex_hash>"  (e.g. "27:abcd1234...")
-    New format: "ts:<timestamp>:<hex_hash>" or "nots:<mcp_id>:<hex_hash>"
+    New format: "ts:<timestamp>:<hex_hash>", "nots:<mcp_id>:<hex_hash>",
+    or "pid:<portal_comment_id>:<hex_hash>"
     """
     for key in keys:
-        if isinstance(key, str) and not key.startswith(("ts:", "nots:")):
+        if isinstance(key, str) and not key.startswith(("ts:", "nots:", "pid:")):
             return True
     return False
 

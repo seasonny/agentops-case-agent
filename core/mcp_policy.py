@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.mcp_action import MCPAction
@@ -22,7 +23,16 @@ class MCPPolicyChecker:
         lowered = text.lower()
         for cmd in self.dangerous_commands:
             needle = cmd.lower().strip()
-            if needle in lowered:
+            if not needle:
+                continue
+            if " " in needle or needle.startswith(">"):
+                if needle in lowered:
+                    return True, cmd
+                continue
+            if re.search(
+                rf"(?<![\w./-]){re.escape(needle)}(?![\w./-])",
+                lowered,
+            ):
                 return True, cmd
         return False, ""
 

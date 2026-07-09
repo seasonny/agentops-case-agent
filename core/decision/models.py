@@ -17,6 +17,7 @@ class DecisionContext:
     case_id: str = ""
     comment_id: Optional[int] = None
     dry_run: bool = False
+    resume_pending_id: Optional[str] = None
 
 
 @dataclass
@@ -33,9 +34,10 @@ class DecisionResult:
     action_type_override: str = ""
     blocked_commands: List[str] = field(default_factory=list)
     approval_pending: List[Dict[str, Any]] = field(default_factory=list)
+    allowed_actions: List[MCPAction] = field(default_factory=list)
 
-    def to_policy_state(self) -> Dict[str, Any]:
-        """Map to workflow state fields used by the policy node."""
+    def to_workflow_state(self) -> Dict[str, Any]:
+        """Map to workflow state after the unified decision node."""
         state: Dict[str, Any] = {
             "policy_passed": self.allowed,
             "policy_reason": self.reason,
@@ -45,14 +47,43 @@ class DecisionResult:
         }
         if self.action_type_override:
             state["action_type"] = self.action_type_override
+        if self.requires_approval:
+            state.update(
+                {
+                    "approval_required": True,
+                    "approval_pending": list(self.approval_pending),
+                    "action_type": "approval_required",
+                    "policy_passed": False,
+                    "execution_results": [],
+                    "status": "POLLING",
+                }
+            )
+        if self.allowed_actions:
+            serialized = [
+                {
+                    "tool": action.tool,
+                    "arguments": dict(action.arguments),
+                    "label": action.label,
+                }
+                for action in self.allowed_actions
+            ]
+            state["mcp_actions"] = serialized
+            if not state.get("action_type") or state.get("action_type") == "call_mcp":
+                state.setdefault("action_type", "call_mcp")
         return state
 
+    def to_policy_state(self) -> Dict[str, Any]:
+        """Backward-compatible alias for workflow/tests."""
+        return self.to_workflow_state()
+
     def to_approval_state(self) -> Dict[str, Any]:
-        """Map to workflow state fields used when approval blocks execution."""
+        """Backward-compatible mapping when approval blocks execution."""
         return {
             "execution_results": [],
             "approval_required": True,
             "approval_pending": list(self.approval_pending),
             "action_type": "approval_required",
             "status": "POLLING",
+            "policy_passed": False,
+            "policy_reason": self.reason,
         }

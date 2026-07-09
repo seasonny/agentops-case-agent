@@ -2,7 +2,7 @@
 
 > **給 Cursor / AI Agent：** 每次完成任務後更新本檔。新 session 開始時先讀這裡，再讀 [AGENTS.md](AGENTS.md)。
 
-最後更新：**2026-07-08**
+最後更新：**2026-07-09**
 
 ---
 
@@ -11,15 +11,21 @@
 | 項目 | 狀態 |
 |------|------|
 | 產品階段 | **PoC / 內部驗證** |
-| 架構對齊 | **Sprint 5 完成** — Domain 分離（`domain/case/` + `CaseDomainHooks`） |
-| 核心流程 | Connector poll → Understanding → Decision → LangGraph（經 Domain hooks）→ Connector 回覆 |
-| 測試 | `make test` — 131 tests OK |
+| 架構對齊 | **Approval Phase B（2026-07-09）** — Pending Store + Workflow resume 閉環 |
+| 核心流程 | Connector poll → Understanding → Decision → Execute → Interpret → Response；grant 後 **resume**（不需新 trigger） |
+| 測試 | `make test` — 156 tests OK |
 | 下一 sprint | **Milestone B** — 真實 Case dry-run / workshop demo（見 [guides/workshop.md](docs/guides/workshop.md)） |
 
 ---
 
 ## 最近完成
 
+- [x] **approval_denied（2026-07-09）**：`--deny` / `--deny-latest` / `make deny`；寫入 `denied[]` + audit；取消同計畫 resumable grant
+- [x] **Approval B.2（2026-07-09）**：Resume 去重（`correlation_id`）；`--approve-latest` / `--approve pend-xxx`；`make approve|pending|audit`
+- [x] **resume approval 閉環修正（2026-07-09）**：`workflow_resume` + `pending_id` 時 Decision Engine 跳過重複 approval
+- [x] **Approval Phase B（2026-07-09）**：Pending Action 持久化（`pending_id` / `correlation_id` / `workflow_context`）；grant 後 `try_resume_approved_workflows`；audit 鏈 `approval_requested` → `approval_granted` → `workflow_resumed` → `mcp_executed`；可選 `connector_reply.mode: customer_status`
+- [x] **HITL 治理定調文件（2026-07-09）**：新增 [docs/architecture/07-human-approval-governance.md](docs/architecture/07-human-approval-governance.md)；更新 enterprise.md / docs 索引
+- [x] **Decision 合一（2026-07-09）**：`DecisionEngine.evaluate()` 整合 dangerous split / policy / approval；Understanding 只產出建議；governance deck 新增 2 張
 - [x] **Milestone A — LLM-first 簡化（2026-07-08）**：移除 PoC 確定性 triage；新增 `workshop.md`；同步 module-map
 - [x] **Sprint 5（2026-07-08）**：建立 `domain/case/`；移動 `collection_flow`、`diag_bundle`、`investigation`
 - [x] `CaseDomainHooks` 編排掛鉤注入 `WorkflowDeps`；`graph.py` 不再直接 import 領域模組
@@ -32,7 +38,7 @@
 
 ## 進行中
 
-_（目前無）_
+- [x] **Milestone B — Case 04444508**：治理閉環已驗證（pending → approve → resume → mcp_executed）；must-gather 因叢集未開而執行失敗屬預期
 
 ---
 
@@ -40,9 +46,99 @@ _（目前無）_
 
 | 優先 | 項目 | 備註 |
 |------|------|------|
+| — | **Approval Phase D** | Slack / AWX / ITSM ApprovalProvider |
 | — | Outage 自動開案 | README / DEVELOPER 標記為尚未實作 |
 | — | `create_case_rh_portal` | 目前被 policy 封鎖 |
-| — | 實際 Case PoC 驗證 | 需 Red Hat OAuth + 有效 `case_id` |
+| — | 實際 Case PoC 驗證 | 需 Red Hat OAuth + 有效 `case_id`；04444508 需新 SE 留言才能觸發 dry-run |
+
+---
+
+## 變更紀錄
+
+### 2026-07-09 — 治理可發現性 + 一次一批 Approval
+
+**做了什麼：**
+- `make policy-dump` 新增 `block_sources`（內建永封 / 能力關閉 / policy.yaml overrides）與 `dangerous_command_sources`
+- `make check` Policy 摘要標示阻擋來源
+- Approval 改為**一次一批**：`is_action_approved` 不再永久記住 fingerprint；每次新請求需重新 approve（grant 只服務 resume）
+
+**驗證：**
+- [x] `make test`（145 OK）
+
+### 2026-07-09 — Approval Phase B（Pending Store + Workflow resume）
+
+**做了什麼：**
+- `core/approval.py`：Pending 持久化 `pending_id` / `correlation_id` / `expires_at` / `workflow_context`；`list_resumable_approved` / `mark_pending_resumed` / `expire_stale_pending`
+- `workflow/runner.py`：`try_resume_approved_workflows` — grant 後下一輪 poll 自動 resume（不依賴 Case 新留言、不受 agent reply tail 阻擋）
+- Audit：`approval_requested`（graph policy）、`approval_granted`（CLI `--approve`）、`workflow_resumed`、`mcp_executed`（executor 正式執行）
+- Phase B.1：`approval.connector_reply.mode: customer_status` — 對外回覆不暴露 fingerprint
+- 新增 `tests/test_approval_resume.py`
+
+**驗證：**
+- [x] `make test`（140 OK）
+
+### 2026-07-09 — HITL 治理定調文件
+
+**做了什麼：**
+- 新增 `docs/architecture/07-human-approval-governance.md`（Approval Gate 為主角；Requester/Approver/Agent；Slack/AWX/ITSM；Audit 鏈）
+- 修訂：弱化 Support/SE 敘事；Case 留言降為 Reference 範例；trigger ≠ approval
+- 更新 governance deck（Approval Gate + Reference 範例 slides）
+- 更新 `docs/README.md`、`operations/enterprise.md`、架構交叉引用
+
+**驗證：**
+- [x] 文件交叉引用一致
+
+### 2026-07-09 — Decision 合一
+
+**做了什麼：**
+- `DecisionEngine.evaluate()`：危險指令 split、MCP 過濾、policy、approval 單次裁決
+- `UnderstandingService` 移除 `_filter_dangerous_mcp_calls` / `_evaluate_dangerous_split`
+- `workflow/graph.py`：`policy` 節點改呼叫 `evaluate()`；`execute` 移除 approval 閘門
+- Governance deck 新增「Decision 合一」「三個情境」slides；`make test` 135 OK
+
+**驗證：**
+- [x] `make test`（135 OK）
+- [x] `node docs/guides/generate-governance-deck.js`
+
+---
+
+
+**做了什麼：**
+- 執行 `make check CASE_ID=04444508`、`make dry-run CASE_ID=04444508`
+- 修復 `pid:` handled key 被誤判為 legacy → 每次啟動強制 re-bootstrap
+- `Makefile` `check` 支援 `CASE_ID=`（與 `dry-run` 一致）
+- 新增 `tests/test_memory_legacy_keys.py`
+
+**驗證：**
+- [x] `make test`（133 OK）
+- [x] `make check CASE_ID=04444508`
+- [x] dry-run 輪詢正常；Case 229 則留言可讀
+- [ ] dry-run 完整一輪 workflow（待 Case 有新 Support 留言）
+
+### 2026-07-08 — Milestone A：LLM-first 簡化
+
+**做了什麼：**
+- 移除 PoC 確定性 triage（`shell_diagnostics`、`cluster_read_routing`、`action_inference`、`clarify_templates`）
+- Triage 改 LLM + MCP catalog；保留 policy / grounding / guardrail / audit
+- 協作品質交 `collaborate_support` LLM；移除空洞片語表
+- 新增 `docs/guides/workshop.md`、`core/explicit_request.py`
+- 同步 `04-module-map.md`、`developer.md`、`constraints.md`
+
+**驗證：**
+- [x] `make test`（131 OK）
+
+### 2026-07-08 — Sprint 5：Domain 分離
+
+**做了什麼：**
+- 新增 `domain/case/`（`collection_flow`、`diag_bundle`、`investigation`、`hooks`）
+- `CaseDomainHooks` 封裝 collection / bundle / investigate 編排步驟
+- `workflow/graph.py` 經 `deps.domain_hooks` 呼叫領域步驟，移除直接 import
+- 從 `core/` 移除已搬移模組；更新 import
+- 更新 `docs/architecture/04-module-map.md`
+
+**驗證：**
+- [x] `make test`（148 OK）
+- [x] `python3 main.py --case-id=04444508`（2026-07-09 Milestone B check OK；dry-run 待新 SE 留言）
 
 ---
 
@@ -65,89 +161,11 @@ _（目前無）_
 | Python | 3.11+ |
 | 測試 Case ID | 使用 `tests/safe_test_data.py` 或 config 範例 `01234567` |
 | MCP OAuth | 根目錄 `agent_config.json` + 首次 `make check` |
-| 回歸驗證 | `python3 main.py --case-id=04444508`（需 `.env` + OAuth） |
+| 回歸驗證 | `make check CASE_ID=04444508`；`make dry-run CASE_ID=04444508` |
 
 ---
 
-## 變更紀錄
-
-### 2026-07-08 — Milestone A：LLM-first 簡化
-
-**做了什麼：**
-- 移除 PoC 確定性 triage（`shell_diagnostics`、`cluster_read_routing`、`action_inference`、`clarify_templates`）
-- Triage 改 LLM + MCP catalog；保留 policy / grounding / guardrail / audit
-- 協作品質交 `collaborate_support` LLM；移除空洞片語表
-- 新增 `docs/guides/workshop.md`、`core/explicit_request.py`
-- 同步 `04-module-map.md`、`developer.md`、`constraints.md`
-
-**驗證：**
-- [x] `make test`（131 OK）
-
-### 2026-07-08 — Sprint 5：Domain 分離
-
-**做了什麼：**
-- 新增 `domain/case/`（`collection_flow`、`diag_bundle`、`investigation`、`hooks`）
-- `CaseDomainHooks` 封裝 collection / bundle / investigate 編排步驟
-- `workflow/graph.py` 經 `deps.domain_hooks` 呼叫領域步驟，移除直接 import
-- 從 `core/` 移除已搬移模組；更新 `action_inference`、`clarify_templates`、`result_interpreter` import
-- 更新 `docs/architecture/04-module-map.md`
-
-**驗證：**
-- [x] `make test`（148 OK）
-- [ ] `python3 main.py --case-id=04444508`（需本機 OAuth / API key，由開發者執行）
-
-### 2026-07-08 — Sprint 4：Connector 抽象
-
-**做了什麼：**
-- 新增 `connectors/`（`Connector` Protocol、`CasePortalConnector`）
-- `workflow/runner.py` 經 `connector.poll_events()` 取留言
-- `workflow/graph.py` 經 `connector.send_response()` 發回覆
-- `bridges/case_portal.py` 保留為 MCP 適配器，由 Connector 封裝
-- 更新 `docs/architecture/04-module-map.md`
-- 新增 `tests/test_connector_case_portal.py`
-
-**驗證：**
-- [x] `make test`（148 OK）
-
-### 2026-07-08 — Sprint 3：Decision Engine
-
-**做了什麼：**
-- 新增 `core/decision/`（`models`、`engine`）
-- `DecisionEngine.evaluate_policy()` / `evaluate_approval()` 委派至 `mcp_policy`、`approval`
-- `workflow/graph.py` `policy` 與核准閘門改經 `DecisionEngine`
-- `audit_trail.record_decision()` 記錄決策
-- 更新 `docs/architecture/04-module-map.md`
-- 新增 `tests/test_decision_engine.py`
-
-**驗證：**
-- [x] `make test`（144 OK）
-- [x] `make policy-dump` 輸出與 sprint 前一致
-
-### 2026-07-08 — Sprint 2：Understanding 邊界
-
-**做了什麼：**
-- 新增 `core/understanding/`（`models`、`action_inference`、`semantic`、`service`）
-- `UnderstandingService` 作為單一入口；`CommentAnalyzer` 改為向後相容 facade
-
-**驗證：**
-- [x] `make test`（140 OK）
-
-### 2026-07-07 — Sprint 1：Workflow Engine 邊界
-
-**做了什麼：**
-- 新增 `workflow/runner.py`（poll 週期 helper + `process_poll_cycle`）
-
-**驗證：**
-- [x] `make test`（135 OK）
-
-### 2026-07-08 — 修復 `--health` CLI import
-
-**做了什麼：**
-- `main.py` 補上 `from core.observability import build_health_report, format_health_text`
-
-**驗證：**
-- [x] `python3 main.py --health` 正常輸出
-- [x] `make test`（135 OK）
+## 變更紀錄（歷史）
 
 ### 2026-06-27 — 建立 Harness Engineering 協作檔
 

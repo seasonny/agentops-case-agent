@@ -5,7 +5,7 @@
 | **Purpose** | 說明 production 部署、稽核、核准、secrets 與 health check |
 | **Audience** | SRE、平台工程師 |
 | **Source of truth** | 本文件是 **Enterprise 部署**的權威來源 |
-| **Related** | [operations/policy.md](policy.md)、[guides/mcp-providers.md](../guides/mcp-providers.md)、[guides/developer.md](../guides/developer.md) |
+| **Related** | [operations/policy.md](policy.md)、[architecture/07-human-approval-governance.md](../architecture/07-human-approval-governance.md)、[guides/mcp-providers.md](../guides/mcp-providers.md)、[guides/developer.md](../guides/developer.md) |
 
 Phase 2 能力：稽核、Outage 模式、人工核准、Case 診斷記憶、Secrets 注入、Health check。
 
@@ -79,6 +79,9 @@ export CASE_AGENT_WEBHOOK_URL=https://hooks.example.com/agent-events
 
 ## 人工核准（HITL）
 
+> **概念與 Enterprise 整合 SSOT：** [architecture/07-human-approval-governance.md](../architecture/07-human-approval-governance.md)  
+> 下列為 Case Agent **Reference 實作** 的 PoC 操作；Production 應接 ApprovalProvider（Slack / AWX / ITSM 等）。
+
 ```json
 "approval": {
   "enabled": true,
@@ -86,16 +89,29 @@ export CASE_AGENT_WEBHOOK_URL=https://hooks.example.com/agent-events
 }
 ```
 
-流程：
+**PoC 流程（CLI）：**
 
-1. Agent 規劃高風險 MCP → 寫入 `reports/{case_id}/approvals.json` pending
-2. 回覆 Case 說明待核准 fingerprint
-3. SRE 核准後下一輪自動重試
+1. Agent 判定 `requires_approval` → 寫入 `reports/{case_id}/approvals.json`
+2. Webhook（若啟用 `outage.notify_on`）通知值班
+3. SRE 以 CLI 核准；Agent **持續 poll** 時下一輪自動 `resume`（不需 Case 再留言）
 
 ```bash
-python main.py --pending-approvals --case-id 01234567
-python main.py --approve 01234567 a1b2c3d4e5f6g7h8 --approved-by sre@corp.com
+make pending CASE_ID=01234567
+make approve CASE_ID=01234567 BY=sre@corp.com
+make deny CASE_ID=01234567 BY=sre@corp.com REASON="不需執行"
+
+# 或完整 CLI
+python3 main.py --case-id=01234567 --pending-approvals
+python3 main.py --case-id=01234567 --approve-latest --approved-by sre@corp.com
+python3 main.py --case-id=01234567 --deny-latest --denied-by sre@corp.com --deny-reason "叢集已下線"
+python3 main.py --case-id=01234567 --approve <fingerprint|pending_id> --approved-by sre@corp.com
+python3 main.py --case-id=01234567 --deny <fingerprint|pending_id> --denied-by sre@corp.com --deny-reason "<原因>"
+make audit CASE_ID=01234567
 ```
+
+**Deny vs Expire：** `approval_denied` 為 Approver **主動拒絕**；`approval_expired` 為 TTL 逾時無人處理。兩者皆不執行 MCP。
+
+**Resume 去重：** 同一 `correlation_id` 只 resume 一次，避免重複發 Case 回覆。詳見 [07-human-approval-governance.md](../architecture/07-human-approval-governance.md)。
 
 ---
 
@@ -167,4 +183,5 @@ Health 報告含：LLM、MCP providers、policy profile/mode、outage 狀態、a
 
 - [guides/mcp-providers.md](../guides/mcp-providers.md) — 多產品 MCP 掛載
 - [operations/policy.md](policy.md) — 能力包說明
+- [architecture/07-human-approval-governance.md](../architecture/07-human-approval-governance.md) — HITL 概念與整合
 - [guides/developer.md](../guides/developer.md) — 實作與除錯

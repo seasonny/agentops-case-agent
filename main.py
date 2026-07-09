@@ -10,8 +10,14 @@ from bridges.case_portal import CasePortalBridge
 from connectors import CasePortalConnector
 from bridges.mcp_registry import MCPRegistry
 from core.agent_settings import init_agent_settings
-from core.approval import approve_fingerprint, format_pending_approvals_text
-from core.audit_trail import format_audit_report_text
+from core.approval import (
+    approve_latest,
+    approve_token,
+    deny_latest,
+    deny_token,
+    format_pending_approvals_text,
+)
+from core.audit_trail import AuditTrail, format_audit_report_text
 from core.case_convergence import CaseConvergenceAssessor
 from core.collaboration_reasoner import CollaborationReasoner
 from core.decision import DecisionEngine
@@ -83,13 +89,38 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--approve",
-        metavar="FINGERPRINT",
-        help="Approve a pending MCP action by fingerprint",
+        metavar="TOKEN",
+        help="Approve pending MCP action by fingerprint or pending_id (pend-...)",
+    )
+    parser.add_argument(
+        "--approve-latest",
+        action="store_true",
+        help="Approve the oldest pending item for the case and exit",
     )
     parser.add_argument(
         "--approved-by",
         default="operator",
         help="Name recorded when using --approve",
+    )
+    parser.add_argument(
+        "--deny",
+        metavar="TOKEN",
+        help="Deny pending MCP action by fingerprint or pending_id (pend-...)",
+    )
+    parser.add_argument(
+        "--deny-latest",
+        action="store_true",
+        help="Deny the oldest pending item for the case and exit",
+    )
+    parser.add_argument(
+        "--denied-by",
+        default="operator",
+        help="Name recorded when using --deny",
+    )
+    parser.add_argument(
+        "--deny-reason",
+        default="",
+        help="Reason recorded when using --deny",
     )
     return parser.parse_args()
 
@@ -145,15 +176,85 @@ def main() -> None:
         print(format_pending_approvals_text(case_id))
         raise SystemExit(0)
 
-    if args.approve:
+    if args.approve_latest or args.approve:
         if not case_id:
             log_warning("case_id_missing", hint="Set case_id in config/agent_config.json or CASE_ID env")
             raise SystemExit(1)
-        ok = approve_fingerprint(case_id, args.approve, approved_by=args.approved_by)
+        if args.approve_latest and args.approve:
+            print("Use either --approve-latest or --approve TOKEN, not both.")
+            raise SystemExit(1)
+        if args.approve_latest:
+            ok, entry = approve_latest(
+                case_id,
+                approved_by=args.approved_by,
+                approved_via="cli:operator",
+            )
+            token_label = "latest pending"
+        else:
+            ok, entry = approve_token(
+                case_id,
+                args.approve,
+                approved_by=args.approved_by,
+                approved_via="cli:operator",
+            )
+            token_label = args.approve
         if ok:
-            print(f"Approved fingerprint {args.approve} for case {case_id}")
+            audit = AuditTrail(config=config, case_id=case_id)
+            if entry:
+                audit.record_approval_granted(
+                    approved_item=entry,
+                    approved_by=args.approved_by,
+                    approved_via="cli:operator",
+                )
+            approved_ref = entry.get("pending_id") or entry.get("fingerprint") if entry else token_label
+            print(f"Approved {approved_ref} for case {case_id}")
             raise SystemExit(0)
-        print(f"Fingerprint not found in pending list: {args.approve}")
+        if args.approve_latest:
+            print(f"No pending approvals for case {case_id}")
+        else:
+            print(f"Approval token not found in pending list: {args.approve}")
+        raise SystemExit(1)
+
+    if args.deny_latest or args.deny:
+        if not case_id:
+            log_warning("case_id_missing", hint="Set case_id in config/agent_config.json or CASE_ID env")
+            raise SystemExit(1)
+        if args.deny_latest and args.deny:
+            print("Use either --deny-latest or --deny TOKEN, not both.")
+            raise SystemExit(1)
+        if args.deny_latest:
+            ok, entry = deny_latest(
+                case_id,
+                denied_by=args.denied_by,
+                denied_via="cli:operator",
+                reason=args.deny_reason,
+            )
+            token_label = "latest pending"
+        else:
+            ok, entry = deny_token(
+                case_id,
+                args.deny,
+                denied_by=args.denied_by,
+                denied_via="cli:operator",
+                reason=args.deny_reason,
+            )
+            token_label = args.deny
+        if ok:
+            audit = AuditTrail(config=config, case_id=case_id)
+            if entry:
+                audit.record_approval_denied(
+                    denied_item=entry,
+                    denied_by=args.denied_by,
+                    denied_via="cli:operator",
+                    reason=args.deny_reason,
+                )
+            denied_ref = entry.get("pending_id") or entry.get("fingerprint") if entry else token_label
+            print(f"Denied {denied_ref} for case {case_id}")
+            raise SystemExit(0)
+        if args.deny_latest:
+            print(f"No pending approvals to deny for case {case_id}")
+        else:
+            print(f"Deny token not found in pending list: {args.deny}")
         raise SystemExit(1)
 
     if not case_id:

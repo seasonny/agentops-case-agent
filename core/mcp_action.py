@@ -71,6 +71,8 @@ class MCPExecutor:
         self.audit = audit
         self.comment_id = comment_id
         self.dry_run = dry_run
+        self.resume_pending_id: Optional[str] = None
+        self.resume_correlation_id: Optional[str] = None
 
     def run_action(self, action: MCPAction) -> str:
         tool_map: Dict[str, str] = {}
@@ -102,14 +104,26 @@ class MCPExecutor:
             output = "(MCP 工具無文字輸出)"
         truncated = self._truncate(output)
         if self.audit:
-            self.audit.record_mcp_call(
-                action,
-                comment_id=self.comment_id,
-                provider=str(provider_name),
-                actual_tool=adapted_tool,
-                result_preview=truncated,
-                dry_run=self.dry_run,
-            )
+            if self.dry_run:
+                self.audit.record_mcp_call(
+                    action,
+                    comment_id=self.comment_id,
+                    provider=str(provider_name),
+                    actual_tool=adapted_tool,
+                    result_preview=truncated,
+                    dry_run=True,
+                )
+            else:
+                self.audit.record_mcp_executed(
+                    action,
+                    comment_id=self.comment_id,
+                    provider=str(provider_name),
+                    actual_tool=adapted_tool,
+                    result_preview=truncated,
+                    dry_run=False,
+                    pending_id=self.resume_pending_id,
+                    correlation_id=self.resume_correlation_id,
+                )
         return truncated
 
     def run_many(self, actions: List[MCPAction]) -> List[str]:

@@ -47,12 +47,7 @@ def _base_deps(**overrides):
     deps.policy.is_dangerous_command.return_value = (False, "")
     deps.policy.check_all.return_value = (True, "Passed")
     deps.policy.check_action.return_value = (True, "Passed")
-    deps.decision_engine.evaluate_policy.return_value = _policy_result()
-    deps.decision_engine.evaluate_approval.return_value = DecisionResult(
-        allowed=True,
-        reason="Approval not required or already granted.",
-        policy_ref="approval",
-    )
+    deps.decision_engine.evaluate.return_value = _policy_result()
     deps.composer.compose.return_value = "composed reply"
     deps.reply_guardrail.validate.return_value = (True, "ok", "safe reply")
     deps.interpreter.interpret.return_value = {
@@ -109,7 +104,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(output.get("composed_reply"), "collaborative reply")
 
         deps = _base_deps()
-        deps.decision_engine.evaluate_policy.return_value = _policy_result(
+        deps.decision_engine.evaluate.return_value = _policy_result(
             allowed=False,
             reason="blocked by policy",
         )
@@ -293,7 +288,7 @@ class WorkflowIntegrationTests(unittest.TestCase):
             }
         )
         deps.executor.run_many.return_value = ["first batch"]
-        deps.decision_engine.evaluate_policy.side_effect = [
+        deps.decision_engine.evaluate.side_effect = [
             _policy_result(allowed=True),
             _policy_result(allowed=False, reason="blocked follow-up"),
         ]

@@ -27,5 +27,6 @@ mode:
 #   allow_tools: []
 #   block_tools: []
 #   exec_binaries: []
-#   dangerous_commands: []
+#   dangerous_commands: []              # 追加到內建清單
+#   replace_dangerous_commands: true  # 搭配 dangerous_commands 完全取代內建清單
 #   upload_path_prefixes: ["/tmp/", "./must-gather/"]
